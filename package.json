@@ -30,6 +30,10 @@
     "type": "git",
     "url": "https://github.com/aipartnerup/apcore-toolkit-typescript"
   },
+  "homepage": "https://aipartnerup.com",
+  "bugs": {
+    "url": "https://github.com/aipartnerup/apcore-toolkit-typescript/issues"
+  },
   "files": [
     "dist",
     "README.md",
