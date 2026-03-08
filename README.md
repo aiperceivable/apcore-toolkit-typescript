@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="https://raw.githubusercontent.com/aipartnerup/apcore-toolkit/main/apcore-toolkit-logo.svg" alt="apcore-toolkit logo" width="200"/>
+</div>
+
 # apcore-toolkit
 
 Shared scanner, schema extraction, and output toolkit for apcore framework adapters (TypeScript).
