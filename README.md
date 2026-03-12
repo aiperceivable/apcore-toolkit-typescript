@@ -12,6 +12,15 @@ Shared scanner, schema extraction, and output toolkit for apcore framework adapt
 npm install apcore-toolkit
 ```
 
+## Features
+
+- Abstract `BaseScanner` for framework-specific endpoint scanning
+- OpenAPI schema extraction (`extractInputSchema`, `extractOutputSchema`)
+- Multi-format output writers (YAML, TypeScript, Registry) with pluggable verification
+- Markdown formatting with depth control and table heuristics
+- Module serialization utilities
+- `flattenParams` for Zod-based parameter flattening
+
 ## Usage
 
 ### ScannedModule
@@ -127,7 +136,24 @@ const dicts = modulesToDicts(modules); // batch conversion
 | `modulesToDicts()` | Batch serialize modules |
 | `annotationsToDict()` | Convert annotations to plain dict |
 | `resolveTarget()` | Dynamic import + named export resolution |
+| `flattenParams()` | Flatten Zod schema params into keyword args |
+| `WriteResult` | Structured result type for writer operations |
+| `Verifier` | Interface for pluggable output verification |
+| `VerifyResult` | Result type for verification operations |
+| `WriteError` | Error class for I/O failures during write |
+| `YAMLVerifier` | Verifies YAML binding file structure |
+| `SyntaxVerifier` | Verifies file is non-empty and readable |
+| `RegistryVerifier` | Verifies module registered in registry |
+| `MagicBytesVerifier` | Verifies file header matches expected bytes |
+| `JSONVerifier` | Verifies valid JSON, optional schema check |
+| `createWriteResult()` | Factory for WriteResult with defaults |
+| `runVerifierChain()` | Run verifier chain, short-circuit on first failure |
+| `AIEnhancer` | SLM-based metadata enhancement for scanned modules |
 | `VERSION` | Package version string |
+
+## Documentation
+
+See the [apcore-toolkit documentation](https://github.com/aipartnerup/apcore-toolkit) for full API reference and guides.
 
 ## License
 

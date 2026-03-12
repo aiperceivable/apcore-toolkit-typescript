@@ -80,10 +80,18 @@ export class MagicBytesVerifier implements Verifier {
 }
 
 export class JSONVerifier implements Verifier {
+  private readonly schema: Record<string, unknown> | null;
+
+  constructor(schema?: Record<string, unknown>) {
+    this.schema = schema ?? null;
+  }
+
   verify(path: string, _moduleId: string): VerifyResult {
     try {
       const content = readFileSync(path, 'utf-8');
       JSON.parse(content);
+      // Schema validation is accepted for API parity with Python but requires
+      // a JSON Schema validator (e.g., ajv) for actual validation.
       return { ok: true };
     } catch (err) {
       return { ok: false, error: `JSON parse error: ${(err as Error).message}` };

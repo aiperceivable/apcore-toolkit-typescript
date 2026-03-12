@@ -3,8 +3,13 @@ import { DEFAULT_ANNOTATIONS } from 'apcore-js';
 import type { ScannedModule } from './types.js';
 import { cloneModule } from './types.js';
 
-function escapeRegExp(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function safeRegExp(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern);
+  } catch {
+    // If the pattern is invalid regex, treat it as a literal string
+    return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  }
 }
 
 export abstract class BaseScanner {
@@ -62,14 +67,12 @@ export abstract class BaseScanner {
     let result = modules;
 
     if (options?.include != null) {
-      const pattern = escapeRegExp(options.include);
-      const re = new RegExp(pattern);
+      const re = safeRegExp(options.include);
       result = result.filter((m) => re.test(m.moduleId));
     }
 
     if (options?.exclude != null) {
-      const pattern = escapeRegExp(options.exclude);
-      const re = new RegExp(pattern);
+      const re = safeRegExp(options.exclude);
       result = result.filter((m) => !re.test(m.moduleId));
     }
 

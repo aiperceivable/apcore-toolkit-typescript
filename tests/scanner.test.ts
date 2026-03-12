@@ -86,19 +86,27 @@ describe('BaseScanner', () => {
       expect(result[0].moduleId).toBe('orders.list');
     });
 
-    it('escapes regex metacharacters in include/exclude — no injection', () => {
+    it('supports regex patterns like Python — ^users matches prefix', () => {
+      const result = scanner.filterModules(modules, { include: '^users' });
+      expect(result).toHaveLength(2);
+      expect(result.map((m) => m.moduleId)).toEqual([
+        'users.list',
+        'users.create',
+      ]);
+    });
+
+    it('falls back to literal match for invalid regex patterns', () => {
       const mods = [makeModule('foo.bar'), makeModule('foo(bar)')];
-      // Without escaping, "foo(" would throw a SyntaxError from RegExp
+      // "foo(" is invalid regex — falls back to literal match
       const result = scanner.filterModules(mods, { include: 'foo(' });
       expect(result).toHaveLength(1);
       expect(result[0].moduleId).toBe('foo(bar)');
     });
 
-    it('treats dots as literal characters, not regex wildcards', () => {
+    it('dots work as regex wildcards (spec-compatible)', () => {
       const mods = [makeModule('users.list'), makeModule('usersXlist')];
       const result = scanner.filterModules(mods, { include: 'users.list' });
-      expect(result).toHaveLength(1);
-      expect(result[0].moduleId).toBe('users.list');
+      expect(result).toHaveLength(2); // dot matches any char in regex
     });
   });
 
