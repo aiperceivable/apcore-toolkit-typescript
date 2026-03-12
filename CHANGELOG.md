@@ -6,13 +6,19 @@
 
 - `AIEnhancer` class — SLM-based metadata enhancement using OpenAI-compatible
   APIs (Ollama, vLLM, LM Studio). Fills missing descriptions, infers behavioral
-  annotations, and generates input schemas. AI-generated fields tagged with
-  `x-generated-by: slm` for auditability.
-- `createWriteResult()` factory and `runVerifierChain()` helper for writer operations
+  annotations (all 11 fields: `readonly`, `destructive`, `idempotent`,
+  `requires_approval`, `open_world`, `streaming`, `cacheable`, `cache_ttl`,
+  `cache_key_fields`, `paginated`, `pagination_style`), and generates input
+  schemas. AI-generated fields tagged with `x-generated-by: slm` for auditability.
+- `createWriteResult()` factory and `runVerifierChain()` helper for writer operations.
+  `verify: true` runs the built-in verifier (`YAMLVerifier`, `SyntaxVerifier`,
+  `RegistryVerifier`) even when no custom `verifiers` are provided.
 - `allowedPrefixes` parameter on `resolveTarget()` for path restriction security
 
 ### Fixed
 
+- `inferAnnotationsFromMethod()` — `GET` now infers `cacheable: true` in addition
+  to `readonly: true`, matching Python parity
 - `filterModules()` — use `safeRegExp()` that tries regex first and falls back
   to escaped literal on invalid patterns (balances spec compliance with safety)
 - `YAMLWriter._buildBinding()` — use `structuredClone()` for deep cloning nested

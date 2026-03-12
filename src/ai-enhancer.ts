@@ -166,6 +166,42 @@ export class AIEnhancer {
           }
         }
       }
+      // Handle integer annotation fields
+      const intFields = ['cache_ttl'] as const;
+      for (const field of intFields) {
+        if (typeof annData[field] === 'number') {
+          const fieldConf = parsedConf[`annotations.${field}`] ?? parsedConf[field] ?? 0;
+          confidence[`annotations.${field}`] = fieldConf;
+          if (fieldConf >= this.threshold) {
+            accepted[field] = annData[field];
+          } else {
+            warnings.push(`Low confidence (${fieldConf.toFixed(2)}) for annotations.${field} — skipped. Review manually.`);
+          }
+        }
+      }
+      // Handle string annotation fields
+      const strFields = ['pagination_style'] as const;
+      for (const field of strFields) {
+        if (typeof annData[field] === 'string') {
+          const fieldConf = parsedConf[`annotations.${field}`] ?? parsedConf[field] ?? 0;
+          confidence[`annotations.${field}`] = fieldConf;
+          if (fieldConf >= this.threshold) {
+            accepted[field] = annData[field];
+          } else {
+            warnings.push(`Low confidence (${fieldConf.toFixed(2)}) for annotations.${field} — skipped. Review manually.`);
+          }
+        }
+      }
+      // Handle list annotation fields
+      if (Array.isArray(annData['cache_key_fields'])) {
+        const fieldConf = parsedConf['annotations.cache_key_fields'] ?? parsedConf['cache_key_fields'] ?? 0;
+        confidence['annotations.cache_key_fields'] = fieldConf;
+        if (fieldConf >= this.threshold) {
+          accepted['cache_key_fields'] = annData['cache_key_fields'];
+        } else {
+          warnings.push(`Low confidence (${fieldConf.toFixed(2)}) for annotations.cache_key_fields — skipped. Review manually.`);
+        }
+      }
       if (Object.keys(accepted).length > 0) {
         const base = module.annotations ?? { ...DEFAULT_ANNOTATIONS };
         updates.annotations = { ...base, ...accepted };
@@ -222,7 +258,14 @@ export class AIEnhancer {
       parts.push('    "readonly": <true if no side effects>,');
       parts.push('    "destructive": <true if deletes/overwrites data>,');
       parts.push('    "idempotent": <true if safe to retry>,');
-      parts.push('    "cacheable": <true if results can be cached>');
+      parts.push('    "requires_approval": <true if dangerous operation>,');
+      parts.push('    "open_world": <true if calls external systems>,');
+      parts.push('    "streaming": <true if yields results incrementally>,');
+      parts.push('    "cacheable": <true if results can be cached>,');
+      parts.push('    "cache_ttl": <seconds, 0 for no expiry>,');
+      parts.push('    "cache_key_fields": <list of input field names for cache key, or null for all>,');
+      parts.push('    "paginated": <true if supports pagination>,');
+      parts.push('    "pagination_style": <"cursor" or "offset" or "page">');
       parts.push('  },');
     }
     if (gaps.includes('input_schema')) {

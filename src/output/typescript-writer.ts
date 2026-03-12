@@ -4,7 +4,7 @@ import type { ScannedModule } from '../types.js';
 import type { WriteResult, Verifier } from './types.js';
 import { createWriteResult } from './types.js';
 import { WriteError } from './errors.js';
-import { runVerifierChain } from './verifiers.js';
+import { SyntaxVerifier, runVerifierChain } from './verifiers.js';
 
 export class TypeScriptWriter {
   write(
@@ -49,12 +49,20 @@ export class TypeScriptWriter {
         throw new WriteError(filePath, err as Error);
       }
 
-      if (shouldVerify && verifiers.length > 0) {
-        const vResult = runVerifierChain(verifiers, filePath, mod.moduleId);
-        results.push(createWriteResult(mod.moduleId, filePath, vResult.ok, vResult.error ?? null));
-      } else {
-        results.push(createWriteResult(mod.moduleId, filePath));
+      let result = createWriteResult(mod.moduleId, filePath);
+      if (shouldVerify) {
+        const builtinResult = new SyntaxVerifier().verify(filePath, mod.moduleId);
+        if (!builtinResult.ok) {
+          result = createWriteResult(mod.moduleId, filePath, false, builtinResult.error ?? null);
+        }
       }
+      if (result.verified && verifiers.length > 0) {
+        const vResult = runVerifierChain(verifiers, filePath, mod.moduleId);
+        if (!vResult.ok) {
+          result = createWriteResult(mod.moduleId, filePath, false, vResult.error ?? null);
+        }
+      }
+      results.push(result);
     }
 
     return results;

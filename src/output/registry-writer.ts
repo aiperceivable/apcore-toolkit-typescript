@@ -5,7 +5,7 @@ import { resolveTarget } from '../resolve-target.js';
 import type { ScannedModule } from '../types.js';
 import type { WriteResult, Verifier } from './types.js';
 import { createWriteResult } from './types.js';
-import { runVerifierChain } from './verifiers.js';
+import { RegistryVerifier, runVerifierChain } from './verifiers.js';
 
 export class RegistryWriter {
   async write(
@@ -25,12 +25,20 @@ export class RegistryWriter {
       const fm = await this._toFunctionModule(mod);
       registry.register(mod.moduleId, fm);
 
-      if (shouldVerify && verifiers.length > 0) {
-        const vResult = runVerifierChain(verifiers, '', mod.moduleId);
-        results.push(createWriteResult(mod.moduleId, null, vResult.ok, vResult.error ?? null));
-      } else {
-        results.push(createWriteResult(mod.moduleId, null));
+      let result = createWriteResult(mod.moduleId, null);
+      if (shouldVerify) {
+        const builtinResult = new RegistryVerifier(registry).verify('', mod.moduleId);
+        if (!builtinResult.ok) {
+          result = createWriteResult(mod.moduleId, null, false, builtinResult.error ?? null);
+        }
       }
+      if (result.verified && verifiers.length > 0) {
+        const vResult = runVerifierChain(verifiers, '', mod.moduleId);
+        if (!vResult.ok) {
+          result = createWriteResult(mod.moduleId, null, false, vResult.error ?? null);
+        }
+      }
+      results.push(result);
     }
     return results;
   }

@@ -6,7 +6,7 @@ import { annotationsToDict } from '../serializers.js';
 import type { WriteResult, Verifier } from './types.js';
 import { createWriteResult } from './types.js';
 import { WriteError } from './errors.js';
-import { runVerifierChain } from './verifiers.js';
+import { YAMLVerifier, runVerifierChain } from './verifiers.js';
 
 export class YAMLWriter {
   write(
@@ -70,12 +70,20 @@ export class YAMLWriter {
         throw new WriteError(filePath, err as Error);
       }
 
-      if (shouldVerify && verifiers.length > 0) {
-        const vResult = runVerifierChain(verifiers, filePath, module.moduleId);
-        results.push(createWriteResult(module.moduleId, filePath, vResult.ok, vResult.error ?? null));
-      } else {
-        results.push(createWriteResult(module.moduleId, filePath));
+      let result = createWriteResult(module.moduleId, filePath);
+      if (shouldVerify) {
+        const builtinResult = new YAMLVerifier().verify(filePath, module.moduleId);
+        if (!builtinResult.ok) {
+          result = createWriteResult(module.moduleId, filePath, false, builtinResult.error ?? null);
+        }
       }
+      if (result.verified && verifiers.length > 0) {
+        const vResult = runVerifierChain(verifiers, filePath, module.moduleId);
+        if (!vResult.ok) {
+          result = createWriteResult(module.moduleId, filePath, false, vResult.error ?? null);
+        }
+      }
+      results.push(result);
     }
 
     return results;
