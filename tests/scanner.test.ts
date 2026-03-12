@@ -85,6 +85,21 @@ describe('BaseScanner', () => {
       expect(result).toHaveLength(1);
       expect(result[0].moduleId).toBe('orders.list');
     });
+
+    it('escapes regex metacharacters in include/exclude — no injection', () => {
+      const mods = [makeModule('foo.bar'), makeModule('foo(bar)')];
+      // Without escaping, "foo(" would throw a SyntaxError from RegExp
+      const result = scanner.filterModules(mods, { include: 'foo(' });
+      expect(result).toHaveLength(1);
+      expect(result[0].moduleId).toBe('foo(bar)');
+    });
+
+    it('treats dots as literal characters, not regex wildcards', () => {
+      const mods = [makeModule('users.list'), makeModule('usersXlist')];
+      const result = scanner.filterModules(mods, { include: 'users.list' });
+      expect(result).toHaveLength(1);
+      expect(result[0].moduleId).toBe('users.list');
+    });
   });
 
   describe('inferAnnotationsFromMethod', () => {
@@ -123,6 +138,23 @@ describe('BaseScanner', () => {
         ...DEFAULT_ANNOTATIONS,
         readonly: true,
       });
+    });
+  });
+
+  describe('extractDocstring', () => {
+    const scanner = new TestScanner();
+
+    it('returns nulls for non-function input', () => {
+      const result = scanner.extractDocstring(null);
+      expect(result.description).toBeNull();
+      expect(result.documentation).toBeNull();
+      expect(result.params).toEqual({});
+    });
+
+    it('returns nulls for function without JSDoc', () => {
+      const fn = () => 42;
+      const result = scanner.extractDocstring(fn);
+      expect(result.description).toBeNull();
     });
   });
 
