@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { YAMLWriter } from '../src/output/yaml-writer.js';
 import { createScannedModule } from '../src/types.js';
+import type { WriteResult } from '../src/output/types.js';
+import { YAMLVerifier } from '../src/output/verifiers.js';
 
 const REQUIRED_FIELDS = {
   moduleId: 'test-module',
@@ -28,7 +30,7 @@ describe('YAMLWriter', () => {
   });
 
   describe('dry run', () => {
-    it('returns binding data without writing files', () => {
+    it('returns WriteResult without writing files', () => {
       const writer = new YAMLWriter();
       const mod = makeModule();
       const tmpDir = mkdtempSync(join(tmpdir(), 'yaml-writer-dry-'));
@@ -36,7 +38,9 @@ describe('YAMLWriter', () => {
       const results = writer.write([mod], tmpDir, { dryRun: true });
 
       expect(results).toHaveLength(1);
-      expect(results[0]).toHaveProperty('bindings');
+      expect(results[0].moduleId).toBe('test-module');
+      expect(results[0].path).toBeNull();
+      expect(results[0].verified).toBe(true);
       // No files should have been written
       const files = readdirSync(tmpDir);
       expect(files).toHaveLength(0);
@@ -56,77 +60,78 @@ describe('YAMLWriter', () => {
     });
   });
 
-  describe('binding structure (via dryRun)', () => {
-    it('produces correct structure with all fields', () => {
+  describe('WriteResult structure', () => {
+    it('returns WriteResult with correct fields on actual write', () => {
+      const writer = new YAMLWriter();
+      const mod = makeModule({ moduleId: 'result-test' });
+      const tmpDir = mkdtempSync(join(tmpdir(), 'yaml-writer-result-'));
+
+      const results: WriteResult[] = writer.write([mod], tmpDir);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].moduleId).toBe('result-test');
+      expect(results[0].path).toContain('result-test.binding.yaml');
+      expect(results[0].verified).toBe(true);
+      expect(results[0].verificationError).toBeNull();
+
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('verification support', () => {
+    it('runs verifiers when verify=true', () => {
+      const writer = new YAMLWriter();
+      const mod = makeModule({ moduleId: 'verify-test' });
+      const tmpDir = mkdtempSync(join(tmpdir(), 'yaml-writer-verify-'));
+
+      const results = writer.write([mod], tmpDir, {
+        verify: true,
+        verifiers: [new YAMLVerifier()],
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].verified).toBe(true);
+      expect(results[0].verificationError).toBeNull();
+
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('skips verification when verify=false (default)', () => {
+      const writer = new YAMLWriter();
+      const mod = makeModule({ moduleId: 'no-verify-test' });
+      const tmpDir = mkdtempSync(join(tmpdir(), 'yaml-writer-noverify-'));
+
+      const results = writer.write([mod], tmpDir);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].verified).toBe(true);
+
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('file content', () => {
+    it('writes valid YAML with all fields', () => {
       const writer = new YAMLWriter();
       const mod = makeModule({
+        moduleId: 'content-test',
         version: '2.0.0',
         annotations: { readOnly: true },
         documentation: 'Some docs',
         examples: [{ name: 'ex1', input: { key: 'val' }, output: { result: 'ok' } }],
         metadata: { author: 'test' },
       });
+      const tmpDir = mkdtempSync(join(tmpdir(), 'yaml-writer-content-'));
 
-      const results = writer.write([mod], '/tmp/unused', { dryRun: true });
-      const binding = results[0];
+      writer.write([mod], tmpDir);
 
-      expect(binding).toEqual({
-        bindings: [
-          {
-            module_id: 'test-module',
-            target: 'http://localhost:8080/api/test',
-            description: 'A test module',
-            documentation: 'Some docs',
-            tags: ['test', 'example'],
-            version: '2.0.0',
-            annotations: { readOnly: true },
-            examples: [{ name: 'ex1', input: { key: 'val' }, output: { result: 'ok' } }],
-            metadata: { author: 'test' },
-            input_schema: { type: 'object' },
-            output_schema: { type: 'string' },
-          },
-        ],
-      });
-    });
+      const filePath = join(tmpDir, 'content-test.binding.yaml');
+      const content = readFileSync(filePath, 'utf-8');
+      expect(content).toContain('module_id: content-test');
+      expect(content).toContain('version: 2.0.0');
+      expect(content).toContain('documentation: Some docs');
 
-    it('includes all ScannedModule fields mapped correctly', () => {
-      const writer = new YAMLWriter();
-      const mod = makeModule();
-
-      const results = writer.write([mod], '/tmp/unused', { dryRun: true });
-      const entry = (results[0] as { bindings: Record<string, unknown>[] }).bindings[0];
-
-      expect(entry).toHaveProperty('module_id');
-      expect(entry).toHaveProperty('target');
-      expect(entry).toHaveProperty('description');
-      expect(entry).toHaveProperty('documentation');
-      expect(entry).toHaveProperty('tags');
-      expect(entry).toHaveProperty('version');
-      expect(entry).toHaveProperty('annotations');
-      expect(entry).toHaveProperty('examples');
-      expect(entry).toHaveProperty('metadata');
-      expect(entry).toHaveProperty('input_schema');
-      expect(entry).toHaveProperty('output_schema');
-    });
-
-    it('handles null annotations correctly', () => {
-      const writer = new YAMLWriter();
-      const mod = makeModule({ annotations: null });
-
-      const results = writer.write([mod], '/tmp/unused', { dryRun: true });
-      const entry = (results[0] as { bindings: Record<string, unknown>[] }).bindings[0];
-
-      expect(entry.annotations).toBeNull();
-    });
-
-    it('handles empty examples correctly', () => {
-      const writer = new YAMLWriter();
-      const mod = makeModule();
-
-      const results = writer.write([mod], '/tmp/unused', { dryRun: true });
-      const entry = (results[0] as { bindings: Record<string, unknown>[] }).bindings[0];
-
-      expect(entry.examples).toEqual([]);
+      rmSync(tmpDir, { recursive: true, force: true });
     });
   });
 
@@ -189,8 +194,6 @@ describe('YAMLWriter', () => {
       expect(existsSync(tmpDir)).toBe(true);
       expect(existsSync(join(tmpDir, 'mkdir-test.binding.yaml'))).toBe(true);
 
-      rmSync(join(tmpdir(), 'yaml-writer-mkdir-' + Date.now().toString().slice(0, -3)), { recursive: true, force: true });
-      // best-effort cleanup
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
     });
 

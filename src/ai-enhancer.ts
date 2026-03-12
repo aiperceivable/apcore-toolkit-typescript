@@ -124,11 +124,12 @@ export class AIEnhancer {
     const parsed = AIEnhancer._parseResponse(response);
 
     const updates: Record<string, unknown> = {};
+    const parsedConf = (parsed.confidence ?? {}) as Record<string, number>;
     const confidence: Record<string, number> = {};
     const warnings: string[] = [...module.warnings];
 
     if (gaps.includes('description') && parsed.description) {
-      const conf = parsed.confidence?.description ?? 0;
+      const conf = parsedConf.description ?? 0;
       confidence.description = conf;
       if (conf >= this.threshold) {
         updates.description = parsed.description;
@@ -138,7 +139,7 @@ export class AIEnhancer {
     }
 
     if (gaps.includes('documentation') && parsed.documentation) {
-      const conf = parsed.confidence?.documentation ?? 0;
+      const conf = parsedConf.documentation ?? 0;
       confidence.documentation = conf;
       if (conf >= this.threshold) {
         updates.documentation = parsed.documentation;
@@ -149,7 +150,6 @@ export class AIEnhancer {
 
     if (gaps.includes('annotations') && parsed.annotations && typeof parsed.annotations === 'object') {
       const annData = parsed.annotations as Record<string, unknown>;
-      const annConf = (parsed.confidence ?? {}) as Record<string, number>;
       const accepted: Record<string, unknown> = {};
       const boolFields = [
         'readonly', 'destructive', 'idempotent', 'requires_approval',
@@ -157,7 +157,7 @@ export class AIEnhancer {
       ];
       for (const field of boolFields) {
         if (typeof annData[field] === 'boolean') {
-          const fieldConf = annConf[`annotations.${field}`] ?? annConf[field] ?? 0;
+          const fieldConf = parsedConf[`annotations.${field}`] ?? parsedConf[field] ?? 0;
           confidence[`annotations.${field}`] = fieldConf;
           if (fieldConf >= this.threshold) {
             accepted[field] = annData[field];
@@ -173,7 +173,7 @@ export class AIEnhancer {
     }
 
     if (gaps.includes('input_schema') && parsed.input_schema) {
-      const conf = parsed.confidence?.input_schema ?? 0;
+      const conf = parsedConf.input_schema ?? 0;
       confidence.input_schema = conf;
       if (conf >= this.threshold) {
         updates.inputSchema = parsed.input_schema;

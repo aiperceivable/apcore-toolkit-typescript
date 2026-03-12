@@ -12,6 +12,7 @@ vi.mock('node:fs', async () => {
     writeFileSync: vi.fn(),
     mkdirSync: vi.fn(),
     existsSync: vi.fn().mockReturnValue(true),
+    readFileSync: vi.fn().mockReturnValue(''),
   };
 });
 
@@ -41,61 +42,71 @@ describe('TypeScriptWriter', () => {
     vi.restoreAllMocks();
   });
 
-  it('dry run returns generated code strings without writing files', () => {
+  it('dry run returns WriteResult without writing files', () => {
     const mod = makeModule();
     const results = writer.write([mod], '/tmp/out', { dryRun: true });
 
     expect(results).toHaveLength(1);
-    expect(results[0]).toContain("module(");
+    expect(results[0].moduleId).toBe('users.get_user');
+    expect(results[0].path).toBeNull();
+    expect(results[0].verified).toBe(true);
     expect(fs.writeFileSync).not.toHaveBeenCalled();
     expect(fs.mkdirSync).not.toHaveBeenCalled();
   });
 
-  it('generates valid TypeScript code structure with module() call', () => {
+  it('returns WriteResult with path on actual write', () => {
     const mod = makeModule();
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-    const code = results[0];
+    const results = writer.write([mod], '/tmp/out');
 
-    expect(code).toContain("export default module({");
-    expect(code).toContain("async execute(inputs)");
-    expect(code).toContain("});");
+    expect(results).toHaveLength(1);
+    expect(results[0].moduleId).toBe('users.get_user');
+    expect(results[0].path).toContain('users_get_user.ts');
+    expect(results[0].verified).toBe(true);
+    expect(results[0].verificationError).toBeNull();
+  });
+
+  it('writes valid TypeScript code with module() call', () => {
+    const mod = makeModule();
+    writer.write([mod], '/tmp/out');
+
+    const writtenContent = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(writtenContent).toContain("export default module({");
+    expect(writtenContent).toContain("async execute(inputs)");
+    expect(writtenContent).toContain("});");
   });
 
   it('code includes correct import statement', () => {
     const mod = makeModule();
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-    const code = results[0];
+    writer.write([mod], '/tmp/out');
 
-    expect(code).toContain("import { module } from 'apcore-js';");
+    const writtenContent = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(writtenContent).toContain("import { module } from 'apcore-js';");
   });
 
   it('code contains proper id, description, tags, version', () => {
     const mod = makeModule();
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-    const code = results[0];
+    writer.write([mod], '/tmp/out');
 
-    expect(code).toContain('id: "users.get_user"');
-    expect(code).toContain('description: "Get a user by ID"');
-    expect(code).toContain('tags: ["users"]');
-    expect(code).toContain('version: "1.0.0"');
+    const writtenContent = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(writtenContent).toContain('id: "users.get_user"');
+    expect(writtenContent).toContain('description: "Get a user by ID"');
+    expect(writtenContent).toContain('tags: ["users"]');
+    expect(writtenContent).toContain('version: "1.0.0"');
   });
 
   it('handles target parsing — splits "myapp/users:get_user" to import path and export name', () => {
     const mod = makeModule({ target: 'myapp/users:get_user' });
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-    const code = results[0];
+    writer.write([mod], '/tmp/out');
 
-    expect(code).toContain('const { get_user: _original } = await import("myapp/users")');
-    expect(code).toContain("return _original(inputs)");
+    const writtenContent = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(writtenContent).toContain('const { get_user: _original } = await import("myapp/users")');
+    expect(writtenContent).toContain("return _original(inputs)");
   });
 
   it('sanitizes identifiers ("weird.id-test" -> "weird_id_test")', () => {
     const mod = makeModule({ moduleId: 'weird.id-test', target: 'myapp/views:createUser' });
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-
-    // The filename should use the sanitized identifier
-    // We check by writing (non-dry-run) and verifying the path
     writer.write([mod], '/tmp/out');
+
     const writtenPath = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(path.basename(writtenPath)).toBe('weird_id_test.ts');
   });
@@ -121,19 +132,19 @@ describe('TypeScriptWriter', () => {
 
   it('annotations=null -> annotations line omitted from output', () => {
     const mod = makeModule({ annotations: null });
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-    const code = results[0];
+    writer.write([mod], '/tmp/out');
 
-    expect(code).not.toContain('annotations');
+    const writtenContent = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(writtenContent).not.toContain('annotations');
   });
 
   it('annotations present -> annotations serialized inline', () => {
     const mod = makeModule({ annotations: { readOnly: true } });
-    const results = writer.write([mod], '/tmp/out', { dryRun: true });
-    const code = results[0];
+    writer.write([mod], '/tmp/out');
 
-    expect(code).toContain('annotations:');
-    expect(code).toContain(JSON.stringify({ readOnly: true }));
+    const writtenContent = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(writtenContent).toContain('annotations:');
+    expect(writtenContent).toContain(JSON.stringify({ readOnly: true }));
   });
 
   it('writes files to outputDir with correct structure', () => {

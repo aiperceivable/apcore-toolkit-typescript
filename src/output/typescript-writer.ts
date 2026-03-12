@@ -1,15 +1,21 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import type { ScannedModule } from '../types.js';
+import type { WriteResult, Verifier } from './types.js';
+import { createWriteResult } from './types.js';
+import { WriteError } from './errors.js';
+import { runVerifierChain } from './verifiers.js';
 
 export class TypeScriptWriter {
   write(
     modules: ScannedModule[],
     outputDir: string,
-    options?: { dryRun?: boolean },
-  ): string[] {
+    options?: { dryRun?: boolean; verify?: boolean; verifiers?: Verifier[] },
+  ): WriteResult[] {
     const dryRun = options?.dryRun ?? false;
-    const results: string[] = [];
+    const shouldVerify = options?.verify ?? false;
+    const verifiers = options?.verifiers ?? [];
+    const results: WriteResult[] = [];
     const timestamp = new Date().toISOString();
 
     const resolvedOut = dryRun ? '' : resolve(outputDir);
@@ -20,19 +26,34 @@ export class TypeScriptWriter {
 
     for (const mod of modules) {
       const code = this._generateCode(mod, timestamp);
-      results.push(code);
 
-      if (!dryRun) {
-        // Path traversal protection: check raw moduleId before sanitization
-        const rawResolved = resolve(join(resolvedOut, mod.moduleId));
-        if (!rawResolved.startsWith(resolvedOut + '/') && rawResolved !== resolvedOut) {
-          console.warn('Skipping module with path traversal in id: %s', mod.moduleId);
-          continue;
-        }
+      if (dryRun) {
+        results.push(createWriteResult(mod.moduleId, null));
+        continue;
+      }
 
-        const sanitized = this._sanitizeIdentifier(mod.moduleId);
-        const filename = `${sanitized}.ts`;
-        writeFileSync(resolve(join(resolvedOut, filename)), code, 'utf-8');
+      // Path traversal protection: check raw moduleId before sanitization
+      const rawResolved = resolve(join(resolvedOut, mod.moduleId));
+      if (!rawResolved.startsWith(resolvedOut + '/') && rawResolved !== resolvedOut) {
+        console.warn('Skipping module with path traversal in id: %s', mod.moduleId);
+        continue;
+      }
+
+      const sanitized = this._sanitizeIdentifier(mod.moduleId);
+      const filename = `${sanitized}.ts`;
+      const filePath = resolve(join(resolvedOut, filename));
+
+      try {
+        writeFileSync(filePath, code, 'utf-8');
+      } catch (err) {
+        throw new WriteError(filePath, err as Error);
+      }
+
+      if (shouldVerify && verifiers.length > 0) {
+        const vResult = runVerifierChain(verifiers, filePath, mod.moduleId);
+        results.push(createWriteResult(mod.moduleId, filePath, vResult.ok, vResult.error ?? null));
+      } else {
+        results.push(createWriteResult(mod.moduleId, filePath));
       }
     }
 

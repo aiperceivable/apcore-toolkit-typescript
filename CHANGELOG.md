@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.2.0] - 2026-03-12
+
+### Added
+
+- `AIEnhancer` class — SLM-based metadata enhancement using OpenAI-compatible
+  APIs (Ollama, vLLM, LM Studio). Fills missing descriptions, infers behavioral
+  annotations, and generates input schemas. AI-generated fields tagged with
+  `x-generated-by: slm` for auditability.
+- `createWriteResult()` factory and `runVerifierChain()` helper for writer operations
+- `allowedPrefixes` parameter on `resolveTarget()` for path restriction security
+
+### Fixed
+
+- `filterModules()` — use `safeRegExp()` that tries regex first and falls back
+  to escaped literal on invalid patterns (balances spec compliance with safety)
+- `YAMLWriter._buildBinding()` — use `structuredClone()` for deep cloning nested
+  schemas instead of shallow spread
+- `WriteError` — use native ES2022 `Error.cause` instead of shadowing the property
+- `JSONVerifier` — restored `schema` constructor parameter for cross-language
+  API parity with Python SDK
+
+### Tests
+
+- 171 tests across 14 files, all passing
+- Added `RegistryVerifier` test coverage (pass, fail, missing method)
+- Added `resolveTarget` allowedPrefixes tests
+- Full AIEnhancer test suite (15 tests)
+
+---
+
 ## [0.1.0] - 2026-03-07
 
 ### Added

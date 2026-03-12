@@ -3,24 +3,36 @@ import type { Context, ModuleAnnotations, ModuleExample } from 'apcore-js';
 import { annotationsToDict } from '../serializers.js';
 import { resolveTarget } from '../resolve-target.js';
 import type { ScannedModule } from '../types.js';
+import type { WriteResult, Verifier } from './types.js';
+import { createWriteResult } from './types.js';
+import { runVerifierChain } from './verifiers.js';
 
 export class RegistryWriter {
   async write(
     modules: ScannedModule[],
-    registry: { register(moduleId: string, module: unknown): void },
-    options?: { dryRun?: boolean },
-  ): Promise<string[]> {
-    const registered: string[] = [];
+    registry: { register(moduleId: string, module: unknown): void; getModule?(id: string): unknown },
+    options?: { dryRun?: boolean; verify?: boolean; verifiers?: Verifier[] },
+  ): Promise<WriteResult[]> {
+    const shouldVerify = options?.verify ?? false;
+    const verifiers = options?.verifiers ?? [];
+    const results: WriteResult[] = [];
+
     for (const mod of modules) {
       if (options?.dryRun) {
-        registered.push(mod.moduleId);
+        results.push(createWriteResult(mod.moduleId, null));
         continue;
       }
       const fm = await this._toFunctionModule(mod);
       registry.register(mod.moduleId, fm);
-      registered.push(mod.moduleId);
+
+      if (shouldVerify && verifiers.length > 0) {
+        const vResult = runVerifierChain(verifiers, '', mod.moduleId);
+        results.push(createWriteResult(mod.moduleId, null, vResult.ok, vResult.error ?? null));
+      } else {
+        results.push(createWriteResult(mod.moduleId, null));
+      }
     }
-    return registered;
+    return results;
   }
 
   private async _toFunctionModule(mod: ScannedModule): Promise<FunctionModule> {

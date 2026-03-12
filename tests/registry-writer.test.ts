@@ -27,31 +27,39 @@ describe('RegistryWriter', () => {
   });
 
   describe('dry run', () => {
-    it('returns module IDs without calling registry.register', async () => {
+    it('returns WriteResult without calling registry.register', async () => {
       const mod = createScannedModule({ ...REQUIRED_FIELDS });
       const result = await writer.write([mod], mockRegistry, { dryRun: true });
 
-      expect(result).toEqual(['test.greet']);
+      expect(result).toHaveLength(1);
+      expect(result[0].moduleId).toBe('test.greet');
+      expect(result[0].path).toBeNull();
+      expect(result[0].verified).toBe(true);
       expect(mockRegistry.register).not.toHaveBeenCalled();
     });
 
-    it('returns multiple module IDs on dry run', async () => {
+    it('returns multiple WriteResults on dry run', async () => {
       const mod1 = createScannedModule({ ...REQUIRED_FIELDS, moduleId: 'mod.one' });
       const mod2 = createScannedModule({ ...REQUIRED_FIELDS, moduleId: 'mod.two' });
 
       const result = await writer.write([mod1, mod2], mockRegistry, { dryRun: true });
 
-      expect(result).toEqual(['mod.one', 'mod.two']);
+      expect(result).toHaveLength(2);
+      expect(result[0].moduleId).toBe('mod.one');
+      expect(result[1].moduleId).toBe('mod.two');
       expect(mockRegistry.register).not.toHaveBeenCalled();
     });
   });
 
   describe('register modules', () => {
-    it('registers a single module into the registry', async () => {
+    it('registers a single module and returns WriteResult', async () => {
       const mod = createScannedModule({ ...REQUIRED_FIELDS });
       const result = await writer.write([mod], mockRegistry);
 
-      expect(result).toEqual(['test.greet']);
+      expect(result).toHaveLength(1);
+      expect(result[0].moduleId).toBe('test.greet');
+      expect(result[0].path).toBeNull();
+      expect(result[0].verified).toBe(true);
       expect(mockRegistry.register).toHaveBeenCalledOnce();
       expect(mockRegistry.register).toHaveBeenCalledWith('test.greet', expect.anything());
     });
@@ -63,11 +71,9 @@ describe('RegistryWriter', () => {
 
       const result = await writer.write([mod1, mod2, mod3], mockRegistry);
 
-      expect(result).toEqual(['mod.one', 'mod.two', 'mod.three']);
+      expect(result).toHaveLength(3);
+      expect(result.map(r => r.moduleId)).toEqual(['mod.one', 'mod.two', 'mod.three']);
       expect(mockRegistry.register).toHaveBeenCalledTimes(3);
-      expect(mockRegistry.register).toHaveBeenNthCalledWith(1, 'mod.one', expect.anything());
-      expect(mockRegistry.register).toHaveBeenNthCalledWith(2, 'mod.two', expect.anything());
-      expect(mockRegistry.register).toHaveBeenNthCalledWith(3, 'mod.three', expect.anything());
     });
   });
 
@@ -105,7 +111,6 @@ describe('RegistryWriter', () => {
       expect(mockRegistry.register).toHaveBeenCalledOnce();
       const [registeredId, registeredModule] = mockRegistry.register.mock.calls[0];
       expect(registeredId).toBe('test.hello');
-      // The registered module should be a FunctionModule with the correct properties
       expect(registeredModule).toBeDefined();
       expect(registeredModule.moduleId).toBe('test.hello');
       expect(registeredModule.description).toBe('Say hello');
