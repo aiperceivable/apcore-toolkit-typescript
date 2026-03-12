@@ -1,0 +1,9 @@
+export class WriteError extends Error {
+  readonly path: string;
+
+  constructor(path: string, cause: Error) {
+    super(`Write failed for ${path}: ${cause.message}`, { cause });
+    this.name = 'WriteError';
+    this.path = path;
+  }
+}
