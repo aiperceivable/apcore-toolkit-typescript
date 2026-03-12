@@ -111,11 +111,12 @@ describe('BaseScanner', () => {
   });
 
   describe('inferAnnotationsFromMethod', () => {
-    it('GET → readonly=true, rest defaults', () => {
+    it('GET → readonly=true, cacheable=true, rest defaults', () => {
       const ann = BaseScanner.inferAnnotationsFromMethod('GET');
       expect(ann).toEqual({
         ...DEFAULT_ANNOTATIONS,
         readonly: true,
+        cacheable: true,
       });
     });
 
@@ -140,11 +141,12 @@ describe('BaseScanner', () => {
       expect(ann).toEqual({ ...DEFAULT_ANNOTATIONS });
     });
 
-    it('get (lowercase) → readonly=true (case insensitive)', () => {
+    it('get (lowercase) → readonly=true, cacheable=true (case insensitive)', () => {
       const ann = BaseScanner.inferAnnotationsFromMethod('get');
       expect(ann).toEqual({
         ...DEFAULT_ANNOTATIONS,
         readonly: true,
+        cacheable: true,
       });
     });
   });

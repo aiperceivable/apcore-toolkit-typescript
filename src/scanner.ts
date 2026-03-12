@@ -83,7 +83,7 @@ export abstract class BaseScanner {
     const upper = method.toUpperCase();
 
     if (upper === 'GET') {
-      return { ...DEFAULT_ANNOTATIONS, readonly: true };
+      return { ...DEFAULT_ANNOTATIONS, readonly: true, cacheable: true };
     }
     if (upper === 'DELETE') {
       return { ...DEFAULT_ANNOTATIONS, destructive: true };
