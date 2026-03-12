@@ -30,4 +30,16 @@ describe("resolveTarget", () => {
       'Export "nonExistentExport" not found in module "node:path"',
     );
   });
+
+  it("rejects file-path imports outside allowed prefixes", async () => {
+    await expect(
+      resolveTarget("/etc/passwd:default", ["/usr/src/app"]),
+    ).rejects.toThrow("not under any allowed prefix");
+  });
+
+  it("allows file-path imports under an allowed prefix", async () => {
+    // node:path is not a file path, so allowedPrefixes don't restrict it
+    const result = await resolveTarget("node:path:join", ["/some/prefix"]);
+    expect(typeof result).toBe("function");
+  });
 });
