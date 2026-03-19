@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.3.0] - 2026-03-19
+
+### Added
+
+- `deepResolveRefs()` — recursive `$ref` resolution for nested OpenAPI schemas,
+  handling `allOf`/`anyOf`/`oneOf`, `items`, and `properties`. Depth-limited to 16
+  levels to prevent infinite recursion on circular references. Exported from
+  package index for downstream use.
+- `Enhancer` interface — pluggable contract for metadata enhancement, allowing
+  custom enhancers beyond the built-in `AIEnhancer`.
+
+### Fixed
+
+- `extractOutputSchema()` — now recursively resolves all nested `$ref` pointers
+  via `deepResolveRefs` (previously only handled the shallow case of array items
+  with `$ref`).
+- `extractInputSchema()` — now recursively resolves `$ref` inside individual
+  properties after assembly (was missing entirely).
+- `WriteError.cause` — explicit typed `override readonly cause: Error` property,
+  narrowing from the base `unknown` type.
+
+### Tests
+
+- 182 tests (up from 171), all passing
+- Added `deepResolveRefs` test suite (8 tests): top-level ref, nested properties,
+  allOf/anyOf, array items, deeply nested refs, circular ref depth limit,
+  immutability guarantee
+- Added nested `$ref` tests for `extractInputSchema` and `extractOutputSchema`
+- Shared `OPENAPI_DOC` fixture with rich schema graph for all openapi tests
+
+---
+
 ## [0.2.0] - 2026-03-12
 
 ### Added

@@ -5,6 +5,7 @@ export { enrichSchemaDescriptions } from './schema-utils.js';
 export {
   resolveRef,
   resolveSchema,
+  deepResolveRefs,
   extractInputSchema,
   extractOutputSchema,
 } from './openapi.js';
@@ -17,7 +18,7 @@ export { resolveTarget } from './resolve-target.js';
 export { toMarkdown } from './formatting/index.js';
 export { flattenParams } from './flatten-params.js';
 export { AIEnhancer } from './ai-enhancer.js';
-export type { AIEnhancerOptions } from './ai-enhancer.js';
+export type { AIEnhancerOptions, Enhancer } from './ai-enhancer.js';
 export { YAMLWriter } from './output/yaml-writer.js';
 export { TypeScriptWriter } from './output/typescript-writer.js';
 export { RegistryWriter } from './output/registry-writer.js';

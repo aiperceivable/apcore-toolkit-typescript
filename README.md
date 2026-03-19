@@ -129,7 +129,8 @@ const dicts = modulesToDicts(modules); // batch conversion
 | `extractInputSchema()` | Extract input schema from OpenAPI operation |
 | `extractOutputSchema()` | Extract output schema from OpenAPI operation |
 | `resolveRef()` | Resolve `$ref` in OpenAPI documents |
-| `resolveSchema()` | Resolve schema with `$ref` support |
+| `resolveSchema()` | Resolve schema with single-level `$ref` support |
+| `deepResolveRefs()` | Recursively resolve all nested `$ref` pointers in a schema |
 | `enrichSchemaDescriptions()` | Merge parameter descriptions into schema |
 | `toMarkdown()` | Convert dict to formatted Markdown |
 | `moduleToDict()` | Serialize module to snake_case dict |
@@ -148,6 +149,7 @@ const dicts = modulesToDicts(modules); // batch conversion
 | `JSONVerifier` | Verifies valid JSON, optional schema check |
 | `createWriteResult()` | Factory for WriteResult with defaults |
 | `runVerifierChain()` | Run verifier chain, short-circuit on first failure |
+| `Enhancer` | Pluggable interface for metadata enhancement |
 | `AIEnhancer` | SLM-based metadata enhancement for scanned modules |
 | `VERSION` | Package version string |
 

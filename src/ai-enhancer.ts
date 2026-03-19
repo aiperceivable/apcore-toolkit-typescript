@@ -36,6 +36,16 @@ function parseIntEnv(name: string, fallback: number): number {
   return val;
 }
 
+/**
+ * Protocol for pluggable metadata enhancement.
+ *
+ * Any class implementing this interface can be used to fill metadata gaps
+ * in scanned modules. See the AI Enhancement Guide for details.
+ */
+export interface Enhancer {
+  enhance(modules: ScannedModule[]): Promise<ScannedModule[]>;
+}
+
 export interface AIEnhancerOptions {
   endpoint?: string;
   model?: string;
