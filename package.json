@@ -1,6 +1,6 @@
 {
   "name": "apcore-toolkit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Shared scanner, schema extraction, and output toolkit for apcore framework adapters",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,7 @@
   "sideEffects": false,
   "license": "Apache-2.0",
   "author": {
-    "name": "aipartnerup",
+    "name": "aiperceivable",
     "email": "tercel.yi@gmail.com"
   },
   "keywords": [
@@ -28,11 +28,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/aipartnerup/apcore-toolkit-typescript"
+    "url": "https://github.com/aiperceivable/apcore-toolkit-typescript"
   },
-  "homepage": "https://aipartnerup.com",
+  "homepage": "https://aiperceivable.com",
   "bugs": {
-    "url": "https://github.com/aipartnerup/apcore-toolkit-typescript/issues"
+    "url": "https://github.com/aiperceivable/apcore-toolkit-typescript/issues"
   },
   "files": [
     "dist",

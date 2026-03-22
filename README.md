@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/aipartnerup/apcore-toolkit/main/apcore-toolkit-logo.svg" alt="apcore-toolkit logo" width="200"/>
+  <img src="https://raw.githubusercontent.com/aiperceivable/apcore-toolkit/main/apcore-toolkit-logo.svg" alt="apcore-toolkit logo" width="200"/>
 </div>
 
 # apcore-toolkit
@@ -155,7 +155,7 @@ const dicts = modulesToDicts(modules); // batch conversion
 
 ## Documentation
 
-See the [apcore-toolkit documentation](https://github.com/aipartnerup/apcore-toolkit) for full API reference and guides.
+See the [apcore-toolkit documentation](https://github.com/aiperceivable/apcore-toolkit) for full API reference and guides.
 
 ## License
 
