@@ -19,6 +19,12 @@ export { toMarkdown } from './formatting/index.js';
 export { flattenParams } from './flatten-params.js';
 export { AIEnhancer } from './ai-enhancer.js';
 export type { AIEnhancerOptions, Enhancer } from './ai-enhancer.js';
+export { DisplayResolver } from './display-resolver.js';
+export type {
+  DisplayResolveOptions,
+  DisplayMetadata,
+  SurfaceDisplay,
+} from './display-resolver.js';
 export { YAMLWriter } from './output/yaml-writer.js';
 export { TypeScriptWriter } from './output/typescript-writer.js';
 export { RegistryWriter } from './output/registry-writer.js';

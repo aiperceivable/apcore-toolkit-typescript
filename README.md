@@ -151,6 +151,7 @@ const dicts = modulesToDicts(modules); // batch conversion
 | `runVerifierChain()` | Run verifier chain, short-circuit on first failure |
 | `Enhancer` | Pluggable interface for metadata enhancement |
 | `AIEnhancer` | SLM-based metadata enhancement for scanned modules |
+| `DisplayResolver` | Sparse binding.yaml overlay — resolves alias, description, guidance, tags into `metadata["display"]` |
 | `VERSION` | Package version string |
 
 ## Documentation

@@ -1,6 +1,6 @@
 {
   "name": "apcore-toolkit",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Shared scanner, schema extraction, and output toolkit for apcore framework adapters",
   "type": "module",
   "main": "./dist/index.js",
@@ -50,7 +50,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "apcore-js": "^0.13.0",
+    "apcore-js": ">=0.14.0",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {

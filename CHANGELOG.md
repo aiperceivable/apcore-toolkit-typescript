@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] - 2026-03-25
+
+### Added
+
+- **`DisplayResolver`** — sparse `binding.yaml` overlay that resolves surface-facing alias, description, guidance, tags, and documentation into `metadata["display"]` for CLI, MCP, and A2A consumers. Ported from Python with full feature parity.
+  - Resolution chain: surface-specific override > `display` default > binding-level field > scanner value.
+  - MCP alias auto-sanitization and 64-char limit enforcement.
+  - CLI alias validation with fallback on pattern mismatch.
+  - `suggested_alias` fallback from `ScannedModule.metadata`.
+  - Match-count logging via `console.info`/`console.warn`.
+  - Supports single YAML files, directories of `*.binding.yaml` files, and pre-parsed data.
+
 ## [0.3.1] - 2026-03-22
 
 ### Changed
