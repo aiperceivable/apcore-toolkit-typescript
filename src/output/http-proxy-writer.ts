@@ -78,8 +78,16 @@ export interface HTTPProxyRegistryWriterOptions {
   /**
    * Optional callable returning HTTP headers for authentication
    * (e.g. `{ Authorization: 'Bearer xxx' }`). Called once per request.
+   *
+   * May return a promise. A token refresh is an HTTP round-trip, which is
+   * inherently async in TypeScript, so a synchronous-only signature would
+   * make `DeviceAuthClient.asAuthHeaderFactory()` unusable here (recorded
+   * Decision 1, option A in
+   * `apcore-toolkit/docs/features/device-auth.md`). Widening is
+   * backward-compatible: awaiting a non-promise is a no-op, so every
+   * existing synchronous factory keeps working unchanged.
    */
-  authHeaderFactory?: () => Record<string, string>;
+  authHeaderFactory?: () => Record<string, string> | Promise<Record<string, string>>;
   /** HTTP request timeout in milliseconds. Defaults to 60_000 (60s). */
   timeoutMs?: number;
   /**
@@ -161,7 +169,7 @@ function extractErrorMessage(resp: Response, text: string): string {
  */
 export class HTTPProxyRegistryWriter {
   private readonly baseUrl: string;
-  private readonly authHeaderFactory?: () => Record<string, string>;
+  private readonly authHeaderFactory?: () => Record<string, string> | Promise<Record<string, string>>;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
 
@@ -254,7 +262,7 @@ export class HTTPProxyRegistryWriter {
     ): Promise<Record<string, unknown>> => {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (authFactory) {
-        const authHeaders = authFactory();
+        const authHeaders = await authFactory();
         if (authHeaders && typeof authHeaders === 'object') {
           Object.assign(headers, authHeaders);
         } else {

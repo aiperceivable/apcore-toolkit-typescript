@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **RFC 8628 Device Authorization Flow client** (`src/auth/`), re-exported from the package root and — minus the filesystem-bound half — from `apcore-toolkit/browser`. The protocol half only: the toolkit writes nothing to a terminal, and user-code display, browser launch, and poll progress reach the consumer through the `onUserCode` / `onPoll` callbacks. Spec: `apcore-toolkit/docs/features/device-auth.md`.
+  - **`TokenSet`** — opaque credential with wall-clock `expiresAt`, a 30-second default expiry skew, and redaction in `toString()`, `util.inspect` (what `console.log` actually calls) and `JSON.stringify`.
+  - **`TokenStore` protocol, `MemoryTokenStore`, `FileTokenStore`** — atomic replace (temp file in the same directory, then `rename`), mode `0600` applied at open time rather than by a later `chmod`, and a refusal to read a credentials file with broader permissions. Keyed `"<issuer>|<client_id>"`, falling back to the token endpoint when no issuer is configured. `FileTokenStore` is Node-only and deliberately absent from `apcore-toolkit/browser`, the same split as `BindingLoader` / `BindingParser`.
+  - **`DeviceAuthConfig`** — the provider-compatibility surface (`extraDeviceParams`, `extraTokenParams`, `extraHeaders`, `errorAliases`, `fieldAliases`, `scopeSeparator`, `defaultInterval`, `clientAuthMethod`, per-request-kind `requestEncoding`, `buildAuthHeaders`) plus `discover()`, an explicit network step that tries the three well-known candidates in order and compares the document's `issuer` verbatim. No vendor endpoint is hard-coded anywhere.
+  - **`Grant` interface and `DeviceCodeGrant`** — the polling state machine, pure over an injected monotonic `clock`, `sleep`, and `wallClock`. V1 ships device flow alone (recorded Decision 5), with the interface in place so a second grant is one implementation rather than a rewrite.
+  - **`DeviceAuthClient`** — `login()`, `ensureValid()`, `refresh()` with rotation handling, and `asAuthHeaderFactory()`.
+  - **The four extension hooks** — `transformRequest`, `parseResponse`, `classifyError`, and `fetchImpl` injection, with the fixed invocation order and loud rejection of an out-of-contract `classifyError` return.
+- 158 new tests: 65 conformance cases against the shared corpus at `apcore-toolkit/conformance/fixtures/device_auth.json` (`tests/device-auth-conformance.test.ts`, no HTTP mocking — the state machine is driven by a scripted `AuthTransport` and an injected clock), plus `tests/device-auth-store.test.ts` and `tests/device-auth.test.ts`.
+
+### Changed
+
+- **`HTTPProxyRegistryWriter`'s `authHeaderFactory` may now return a promise** (`() => Record<string, string> | Promise<Record<string, string>>`), and the writer awaits it. Recorded Decision 1, option A: a token refresh is an HTTP round-trip, so a synchronous-only signature makes `DeviceAuthClient.asAuthHeaderFactory()` unusable as a writer credential. Backward-compatible — awaiting a non-promise is a no-op, so every existing synchronous factory keeps working unchanged.
+
+## [0.13.0] - unreleased
+
+Adds the **RFC 8628 Device Authorization Flow client** ([apcore-toolkit#17](https://github.com/aiperceivable/apcore-toolkit/issues/17)) — the protocol half only. The toolkit writes nothing to a terminal: it emits events, and the consumer renders them.
+
+### Added
+
+- **`DeviceAuthClient`, `DeviceAuthConfig`, `TokenSet`, `TokenStore`, `FileTokenStore`, `Grant` / `DeviceCodeGrant`**, and the four extension hooks. See [`docs/features/device-auth.md`](https://github.com/aiperceivable/apcore-toolkit/blob/main/docs/features/device-auth.md). `HTTPProxyRegistryWriter.authHeaderFactory` is widened to `Record | Promise<Record>` and awaited — backward-compatible, since awaiting a non-promise is a no-op. Without it `asAuthHeaderFactory()` could not plug into its own stated integration point. `FileTokenStore` is Node-only and absent from the `/browser` entry point.
+- Asserted against the shared **65-case** corpus (`conformance/fixtures/device_auth.json`). **No HTTP mocking is required**: the state machine is pure over an injected monotonic clock and a scripted response sequence.
+- **V1 is device flow only**, with the `Grant` interface in place so a second grant is one implementation against a stable seam rather than a rewrite. A deliberate scope-down from the proposal's own recommendation — PKCE widens the exact surface whose risk mitigation depends on being narrow, and no consumer has yet named a provider lacking device-flow support.
+
+### Notes
+
+Tokens persist to `~/.config/apcore/credentials.json` (`%APPDATA%\apcore\` on Windows), `0600`, written by atomic replace, keyed by issuer and client id. The path is normative rather than per-SDK precisely so that tools maintaining credential baselines can protect it — `apexe` has added it to its own.
+
+**900 tests pass** (680 at 0.11.1). `tsc --noEmit` and the build are clean.
+
+---
+
+## [0.12.0] - unreleased
+
+Closes a latent spec gap in `BindingLoader` ([apcore-toolkit#18](https://github.com/aiperceivable/apcore-toolkit/issues/18)).
+
+### Added
+
+- **`BindingLoader.load` honours a caller-supplied `pattern`.** apcore 0.30 made `bindings.pattern` a canonical configuration default, but this loader hardcoded the value and had no parameter through which a caller could pass a configured one — so a consumer that needs the loader's *return value*, rather than apcore's registration side effect, silently dropped the key. `apexe` is exactly that consumer: it loads `.binding.yaml` into `ScannedModule`, converts each into its own `CliModule`, and could not call apcore's config-aware loader without bypassing every control `CliModule` exists to apply. Signature is now `load(filePath, strict?, recursive?, pattern?)` — a fourth optional positional, so no existing call changes.
+- The loader takes the resolved value and does **not** read `Config` itself, keeping the pure-data layer dependency-free and leaving the environment > file > default precedence chain with the caller that actually holds a `Config`.
+- **`conformance/fixtures/binding_pattern.json`** (43 shared cases) pins the matcher, the rejected patterns, and how `pattern` composes with `recursive`. The spec carries the matching **algorithm** in pseudocode, not just the syntax — three independent implementations converge only if the algorithm is fixed.
+
+### Changed
+
+- **Directories are never candidates**, at every depth. A directory whose *name* matched was previously handed to the YAML reader. The file-type check **follows symlinks**, so a symlinked binding file is still selected while a symlinked directory is neither selected nor descended into, and a dangling link is skipped rather than aborting the load.
+
+### Notes
+
+`pattern` matches the **file name** only. `*` and `?` are the only metacharacters; `[`, `]`, `{`, `}` are literals, because character classes and brace expansion are where language glob implementations diverge. A pattern containing `/` or `\` is rejected before any filesystem access — which makes `**/*.binding.yaml` a diagnostic rather than a mystery, since traversal depth is `recursive`'s job.
+
+**900 tests pass** (680 at 0.11.1). `tsc --noEmit` and the build are clean.
+
 ## [0.11.1] - 2026-09-06
 
 Patch release. Bumps the required `apcore-js` floor to `0.30.0`. apcore-js 0.30.0 adds `Config.projectRoot` / `userLevelConfigPaths()`, a new `Config.load` deprecation notice for out-of-tree relative path-typed values, discards a set-but-empty path-typed `APCORE_*` override, and fixes `loadBindingDir` to read `bindings.dir` from the passed `Config` instead of re-reading `APCORE_BINDINGS_DIR` directly — all `Config`/binding-loader internals this toolkit never touches. The complete apcore-js surface this toolkit imports is `ModuleAnnotations`, `ModuleExample`, `DEFAULT_ANNOTATIONS`, `annotationsFromJSON`, `annotationsToJSON`, `Context`, `FunctionModule`, `jsonSchemaToTypeBox`, `ErrorCodes` and `ModuleError` (confirmed via grep: no `Config`, `loadBindingDir`, `ACL`, `ApprovalRequest`, `CancelToken` or `Executor` reference exists in `src/`). No code or API changes; all 680 tests pass unmodified against apcore-js 0.30.0. `pre-commit run --all-files` (`apdev-js check-chars`, `apdev-js check-imports`, `tsc --noEmit`) and `pnpm build` clean.

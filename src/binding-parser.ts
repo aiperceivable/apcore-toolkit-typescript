@@ -30,13 +30,16 @@ export interface BindingLoadOptions {
    */
   strict?: boolean;
   /**
-   * When `true` and the path is a directory, recursively walk subdirectories
-   * to find all `**\/*.binding.yaml` files. When `false` (default), only files
-   * in the immediate directory are loaded (flat glob behaviour).
+   * Ignored by every consumer of this type.
    *
-   * Only honoured by {@link BindingLoader.load}; ignored by
-   * {@link BindingParser.loadData} and {@link parseBindingDocument} which
-   * do not touch the filesystem.
+   * `BindingLoadOptions` is only ever passed to {@link BindingParser.loadData}
+   * and {@link parseBindingDocument}, neither of which touches the
+   * filesystem, so there is nothing for a traversal flag to govern.
+   * `BindingLoader.load` does **not** take an options object — it takes
+   * `recursive` as a positional boolean, `load(path, strict?, recursive?,
+   * pattern?)` — so setting this field there is impossible.
+   *
+   * Retained for backwards compatibility with callers that already pass it.
    */
   recursive?: boolean;
 }

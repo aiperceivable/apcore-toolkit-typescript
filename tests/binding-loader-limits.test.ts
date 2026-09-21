@@ -88,20 +88,52 @@ describe('BindingLoader — file count limit (D11-006)', () => {
   it('throws BindingLoadError when directory has more than 10,000 .binding.yaml files', async () => {
     const fsModule = await import('node:fs');
     const origReaddir = fsModule.readdirSync;
+    const origStat = fsModule.statSync;
     const fakeNames = Array.from({ length: 10001 }, (_, i) => `f${i}.binding.yaml`);
+    const fakePaths = new Set(fakeNames.map((n) => join(tmpDir, n)));
 
+    // Both branches now read with { withFileTypes: true } and resolve each
+    // entry's type with a *following* statSync, so a directory whose name
+    // matches is never a candidate. The fake supplies both halves.
     vi.spyOn(fsModule, 'readdirSync').mockImplementation(((
       p: Parameters<typeof fsModule.readdirSync>[0],
       opts?: Parameters<typeof fsModule.readdirSync>[1],
     ) => {
-      if (String(p) === tmpDir && opts === undefined) {
-        return fakeNames as unknown as ReturnType<typeof fsModule.readdirSync>;
+      if (
+        String(p) === tmpDir &&
+        typeof opts === 'object' &&
+        opts !== null &&
+        (opts as { withFileTypes?: boolean }).withFileTypes === true
+      ) {
+        return fakeNames.map((name) => ({
+          name,
+          isDirectory: () => false,
+          isFile: () => true,
+          isSymbolicLink: () => false,
+        })) as unknown as ReturnType<typeof fsModule.readdirSync>;
       }
       return (origReaddir as typeof fsModule.readdirSync)(
         p,
         opts as Parameters<typeof fsModule.readdirSync>[1],
       );
     }) as typeof fsModule.readdirSync);
+
+    vi.spyOn(fsModule, 'statSync').mockImplementation(((
+      p: Parameters<typeof fsModule.statSync>[0],
+      opts?: Parameters<typeof fsModule.statSync>[1],
+    ) => {
+      if (fakePaths.has(String(p))) {
+        return {
+          isFile: () => true,
+          isDirectory: () => false,
+          size: 16,
+        } as unknown as ReturnType<typeof fsModule.statSync>;
+      }
+      return (origStat as typeof fsModule.statSync)(
+        p,
+        opts as Parameters<typeof fsModule.statSync>[1],
+      );
+    }) as typeof fsModule.statSync);
 
     expect(() => loader.load(tmpDir)).toThrow(BindingLoadError);
     try {
@@ -119,14 +151,36 @@ describe('BindingLoader — file count limit (D11-006)', () => {
   it('throws BindingLoadError when recursive scan yields more than 10,000 files', async () => {
     const fsModule = await import('node:fs');
     const origReaddir = fsModule.readdirSync;
+    const origStat = fsModule.statSync;
     const fakeNames = Array.from({ length: 10001 }, (_, i) => `f${i}.binding.yaml`);
+    const fakePaths = new Set(fakeNames.map((n) => join(tmpDir, n)));
+
+    // Entry type comes from a following statSync, not Dirent.isFile(), so the
+    // fabricated names need stats as well as Dirents.
+    vi.spyOn(fsModule, 'statSync').mockImplementation(((
+      p: Parameters<typeof fsModule.statSync>[0],
+      opts?: Parameters<typeof fsModule.statSync>[1],
+    ) => {
+      if (fakePaths.has(String(p))) {
+        return {
+          isFile: () => true,
+          isDirectory: () => false,
+          size: 16,
+        } as unknown as ReturnType<typeof fsModule.statSync>;
+      }
+      return (origStat as typeof fsModule.statSync)(
+        p,
+        opts as Parameters<typeof fsModule.statSync>[1],
+      );
+    }) as typeof fsModule.statSync);
 
     vi.spyOn(fsModule, 'readdirSync').mockImplementation(((
       p: Parameters<typeof fsModule.readdirSync>[0],
       opts?: Parameters<typeof fsModule.readdirSync>[1],
     ) => {
       // The recursive branch calls readdirSync(dir, { withFileTypes: true }).
-      // Return Dirent-like entries that report as plain files with our names.
+      // Return Dirent-like entries for our names; the loader decides their
+      // type from the stubbed statSync above, not from these predicates.
       if (
         String(p) === tmpDir &&
         opts !== undefined &&

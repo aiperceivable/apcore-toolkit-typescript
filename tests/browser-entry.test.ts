@@ -156,6 +156,23 @@ describe('browser entry point', () => {
       // TUI view model (pure)
       'modulesToViewModel',
       'formatViewModel',
+      // Device authorization flow — the runtime-neutral half
+      'TokenSet',
+      'MemoryTokenStore',
+      'makeStoreKey',
+      'DeviceAuthConfig',
+      'DeviceAuthClient',
+      'DeviceCodeGrant',
+      'FetchAuthTransport',
+      'discoveryCandidates',
+      'resolveMetadata',
+      'validateErrorAliases',
+      'formUrlEncodeComponent',
+      'AuthorizationDeniedError',
+      'AuthorizationExpiredError',
+      'AuthorizationProtocolError',
+      'NoCredentialError',
+      'RefreshFailedError',
     ];
     for (const name of expected) {
       expect(browser, `expected "${name}" to be exported`).toHaveProperty(name);
@@ -180,6 +197,12 @@ describe('browser entry point', () => {
       'JSONVerifier',
       'VERSION',
       'loadSpec',
+      // FileTokenStore reads and writes the filesystem (node:fs, node:os,
+      // node:path, process.env), so it stays on the Node entry point — the
+      // same split that keeps BindingParser in /browser and BindingLoader
+      // out of it. A browser consumer supplies its own TokenStore.
+      'FileTokenStore',
+      'defaultCredentialsPath',
     ];
     for (const name of nodeOnly) {
       expect(browser, `"${name}" must not be exported from /browser`).not.toHaveProperty(name);
