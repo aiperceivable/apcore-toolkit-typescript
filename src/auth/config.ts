@@ -74,7 +74,8 @@ export interface DeviceAuthWarning {
   code:
     | 'grant_type_unrecognised'
     | 'endpoint_origin_mismatch'
-    | 'callback_failed';
+    | 'callback_failed'
+    | 'revocation_failed';
   /** Human-readable text. The toolkit never prints it — that is the consumer's job. */
   message: string;
   /** Underlying error, when the warning came from a thrown one. */

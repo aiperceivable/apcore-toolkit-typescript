@@ -249,6 +249,38 @@ export class DeviceAuthClient {
   }
 
   /**
+   * Clear the stored credential, revoking it first where possible (RFC 7009).
+   *
+   * Revocation is best-effort: RFC 7009 is not universally implemented —
+   * `revocationEndpoint` is absent for providers that lack it — and a
+   * server that refuses or fails the revoke request must not prevent the
+   * local credential from being discarded. A revocation failure is reported
+   * through the configured warning sink rather than thrown.
+   */
+  async logout(): Promise<void> {
+    const tokens = await this.store.load(this.storeKey);
+    const revocationEndpoint = this.config.revocationEndpoint;
+    if (tokens !== null && revocationEndpoint !== null) {
+      try {
+        const ctx = this.pipelineContext();
+        await sendRequest(ctx, 'revoke', revocationEndpoint, {
+          [WireField.TOKEN]: tokens.accessToken,
+          [WireField.TOKEN_TYPE_HINT]: 'access_token',
+        });
+      } catch (err) {
+        this.config.warn({
+          code: 'revocation_failed',
+          message:
+            'Token revocation request failed; clearing the local credential anyway: '
+            + `${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
+        });
+      }
+    }
+    await this.store.clear(this.storeKey);
+  }
+
+  /**
    * A callable returning the complete header map for one API call.
    *
    * Returns a **header mapping**, not a token string, because the header

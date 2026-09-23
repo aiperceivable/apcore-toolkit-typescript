@@ -2,6 +2,15 @@
 
 import { PROTO_DENY as PROTO_DENY_LIST } from './safe-keys.js';
 
+/**
+ * Resolve a JSON `$ref` pointer like `#/components/schemas/Foo`.
+ *
+ * Decodes RFC 6901 escape sequences in path segments (`~1` → `/`, `~0` → `~`).
+ *
+ * @param refString - The `$ref` value (e.g., `#/components/schemas/Foo`).
+ * @param openapiDoc - The full OpenAPI document.
+ * @returns The resolved schema, or an empty object on failure.
+ */
 export function resolveRef(
   refString: string,
   openapiDoc: Record<string, unknown>,
@@ -23,6 +32,14 @@ export function resolveRef(
     : {};
 }
 
+/**
+ * If `schema` contains a `$ref`, resolve it; otherwise return as-is.
+ *
+ * @param schema - A JSON Schema object (possibly containing `$ref`).
+ * @param openapiDoc - The full OpenAPI document (needed for ref resolution),
+ *   or `null` when no document is available.
+ * @returns The resolved schema, or the original `schema` unchanged.
+ */
 export function resolveSchema(
   schema: Record<string, unknown>,
   openapiDoc: Record<string, unknown> | null,
@@ -54,8 +71,21 @@ export function deepResolveRefs(
   if ("$ref" in schema) {
     const ref = schema["$ref"];
     if (typeof ref !== 'string') return schema;
-    const resolved = resolveRef(ref, openapiDoc);
-    return deepResolveRefs(resolved, openapiDoc, depth + 1);
+    // Resolve the target, then merge back any keys that sat BESIDE the `$ref`.
+    // Discarding them silently drops `x-sensitive`, which apcore reads off the
+    // *resolved* schema to decide what to redact — a field the OpenAPI document
+    // marked sensitive then reaches apcore carrying nothing to redact on.
+    // apcore closed the same hole in its own resolver as D-98 in 0.31.0;
+    // see docs/features/openapi.md.
+    const resolved = deepResolveRefs(resolveRef(ref, openapiDoc), openapiDoc, depth + 1);
+    const siblings: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(schema)) {
+      if (k !== "$ref") siblings[k] = v;
+    }
+    if (Object.keys(siblings).length === 0) return resolved;
+    // Siblings are walked at the SAME depth: following the reference has
+    // already consumed a level and they are not a second hop.
+    return { ...resolved, ...deepResolveRefs(siblings, openapiDoc, depth) };
   }
 
   const result = { ...schema };
@@ -153,6 +183,16 @@ export function deepResolveRefs(
   return result;
 }
 
+/**
+ * Extract input schema from an OpenAPI operation.
+ *
+ * Combines query/path parameters and request body properties into a
+ * single `{"type": "object", "properties": ..., "required": [...]}` schema.
+ *
+ * @param operation - An OpenAPI operation object (e.g., from `paths["/users"]["get"]`).
+ * @param openapiDoc - The full OpenAPI document (for `$ref` resolution), or `null`.
+ * @returns A merged JSON Schema object for all input parameters.
+ */
 export function extractInputSchema(
   operation: Record<string, unknown>,
   openapiDoc: Record<string, unknown> | null = null,
@@ -226,6 +266,16 @@ export function extractInputSchema(
   return schema;
 }
 
+/**
+ * Extract output schema from OpenAPI operation responses.
+ *
+ * Accepts any 2xx status code (200–299). Response codes are checked in
+ * lexicographic order, so 200 is preferred over 201, 201 over 202, and so on.
+ *
+ * @param operation - An OpenAPI operation object.
+ * @param openapiDoc - The full OpenAPI document (for `$ref` resolution), or `null`.
+ * @returns The output JSON Schema, or a default empty object schema.
+ */
 export function extractOutputSchema(
   operation: Record<string, unknown>,
   openapiDoc: Record<string, unknown> | null = null,

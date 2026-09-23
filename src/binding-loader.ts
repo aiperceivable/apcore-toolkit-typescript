@@ -78,8 +78,9 @@ export const DEFAULT_BINDING_PATTERN = '*.binding.yaml';
  * UTF-16 code units and would let a single astral character be consumed by
  * two `?`s.
  *
- * @param pattern - The file-name pattern (already validated by
- *   {@link validateBindingPattern} when it came from a caller).
+ * @param pattern - The file-name pattern. Every string is valid: `/`, `\\`,
+ *   `[`, `]`, `{` and `}` are literals, so an odd pattern simply matches no
+ *   file name rather than being rejected.
  * @param name - A bare file name — never a path.
  */
 export function matchesBindingPattern(pattern: string, name: string): boolean {
@@ -116,27 +117,6 @@ export function matchesBindingPattern(pattern: string, name: string): boolean {
   while (p < pat.length && pat[p] === '*') p += 1;
 
   return p === pat.length;
-}
-
-/**
- * Reject patterns that cannot be honoured, **before** any filesystem access,
- * so an invalid pattern surfaces as a diagnostic rather than a silently empty
- * result. Maps to the conformance identifiers `empty_pattern` and
- * `path_separator`.
- *
- * @throws {BindingLoadError} when `pattern` is empty or contains `/` or `\`.
- */
-export function validateBindingPattern(pattern: string): void {
-  if (pattern.length === 0) {
-    throw new BindingLoadError({ reason: 'pattern must not be empty' });
-  }
-  if (pattern.includes('/') || pattern.includes('\\')) {
-    throw new BindingLoadError({
-      reason:
-        'pattern matches file names only; ' +
-        'use recursive=true to descend into subdirectories',
-    });
-  }
 }
 
 /**
@@ -217,10 +197,10 @@ export class BindingLoader extends BindingParser {
     recursive = recursive ?? false;
     const namePattern = pattern ?? DEFAULT_BINDING_PATTERN;
 
-    // Validated before any filesystem access, so `load(dir, ..., '**/*.yaml')`
-    // is a diagnostic rather than a mystery empty result.
-    validateBindingPattern(namePattern);
-
+    // No pattern validation: every string is a valid pattern and the loader
+    // never raises on one for syntactic reasons, matching apcore's Algorithm
+    // A25 requirement 2 (PROTOCOL_SPEC §9.2.3) and §5.12.6 clause 6. `/` and
+    // `\\` are literals, so a pattern carrying one matches no file name.
     let stat: fs.Stats;
     try {
       stat = fs.statSync(filePath);
@@ -247,8 +227,16 @@ export class BindingLoader extends BindingParser {
         // {@link entryKind} stats through symlinks, so a symlinked binding
         // file is still selected (case 040) while a symlinked directory is
         // not (case 041).
-        files = fs
-          .readdirSync(filePath, { withFileTypes: true })
+        let dirEntries: fs.Dirent[];
+        try {
+          dirEntries = fs.readdirSync(filePath, { withFileTypes: true });
+        } catch (exc) {
+          throw new BindingLoadError({
+            reason: `failed to read directory: ${(exc as Error).message}`,
+            filePath,
+          });
+        }
+        files = dirEntries
           .filter(
             (e) =>
               matchesBindingPattern(namePattern, e.name) &&
@@ -330,8 +318,9 @@ export class BindingLoader extends BindingParser {
    * {@link MAX_RECURSION_DEPTH}. Permission errors (`EACCES`/`EPERM`) on an
    * individual subdirectory are swallowed with a warning so one unreadable
    * subtree does not abort loading of the rest; all other `readdirSync`
-   * failures (e.g. `EMFILE`, `ENOTDIR`) propagate so systemic problems are
-   * not silently turned into partial loads.
+   * failures (e.g. `EMFILE`, `ENOTDIR`) are wrapped in {@link BindingLoadError}
+   * and thrown so systemic problems are not silently turned into partial
+   * loads.
    */
   private _collectRecursive(dir: string, pattern: string, depth = 0): string[] {
     if (depth > MAX_RECURSION_DEPTH) {
@@ -351,7 +340,10 @@ export class BindingLoader extends BindingParser {
         );
         return [];
       }
-      throw exc;
+      throw new BindingLoadError({
+        reason: `failed to read directory: ${(exc as Error).message}`,
+        filePath: dir,
+      });
     }
     const results: string[] = [];
     for (const entry of entries) {

@@ -691,6 +691,74 @@ describe('ensureValid and refresh', () => {
   });
 });
 
+describe('logout', () => {
+  const REVOCATION_ENDPOINT = 'https://e.example/revoke';
+
+  it('sends a revoke request and clears the store when revocationEndpoint is configured', async () => {
+    const store = new MemoryTokenStore();
+    const transport = new Recorder(DEVICE_RESPONSE, [
+      SUCCESS,
+      { status: 200, body: {} },
+    ]);
+    const client = makeClient(transport, { store, revocationEndpoint: REVOCATION_ENDPOINT });
+    await client.login();
+    expect(await store.load(client.storeKey)).not.toBeNull();
+
+    await client.logout();
+
+    const revokeRequest = transport.requests.at(-1);
+    expect(revokeRequest?.kind).toBe('revoke');
+    expect(revokeRequest?.url).toBe(REVOCATION_ENDPOINT);
+    expect(revokeRequest?.params.token).toBe('access');
+    expect(revokeRequest?.params.token_type_hint).toBe('access_token');
+    expect(await store.load(client.storeKey)).toBeNull();
+  });
+
+  it('only clears the store, with no request, when revocationEndpoint is not configured', async () => {
+    const store = new MemoryTokenStore();
+    const transport = new Recorder(DEVICE_RESPONSE, [SUCCESS]);
+    const client = makeClient(transport, { store });
+    await client.login();
+    const requestsAfterLogin = transport.requests.length;
+
+    await client.logout();
+
+    expect(transport.requests.length).toBe(requestsAfterLogin);
+    expect(await store.load(client.storeKey)).toBeNull();
+  });
+
+  it('clears the store with no request when there is nothing stored', async () => {
+    const store = new MemoryTokenStore();
+    const transport = new Recorder(DEVICE_RESPONSE, []);
+    const client = makeClient(transport, { store, revocationEndpoint: REVOCATION_ENDPOINT });
+
+    await client.logout();
+
+    expect(transport.requests.length).toBe(0);
+    expect(await store.load(client.storeKey)).toBeNull();
+  });
+
+  it('clears the local credential even when the revoke request fails', async () => {
+    const store = new MemoryTokenStore();
+    const warnings: DeviceAuthWarning[] = [];
+    const transport = new Recorder(DEVICE_RESPONSE, [
+      SUCCESS,
+      { transportError: true },
+    ]);
+    const client = makeClient(transport, {
+      store,
+      revocationEndpoint: REVOCATION_ENDPOINT,
+      onWarning: (w: DeviceAuthWarning) => warnings.push(w),
+    });
+    await client.login();
+
+    await expect(client.logout()).resolves.toBeUndefined();
+
+    expect(await store.load(client.storeKey)).toBeNull();
+    expect(warnings.map((w) => w.code)).toEqual(['revocation_failed']);
+  });
+});
+
 describe('asAuthHeaderFactory', () => {
   it('returns a complete header map, refreshed per call', async () => {
     const transport = new Recorder(DEVICE_RESPONSE, [SUCCESS]);

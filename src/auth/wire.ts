@@ -43,6 +43,7 @@ export const WireField = {
   CLIENT_SECRET: 'client_secret',
   GRANT_TYPE: 'grant_type',
   TOKEN: 'token',
+  TOKEN_TYPE_HINT: 'token_type_hint',
   ISSUER: 'issuer',
   DEVICE_AUTHORIZATION_ENDPOINT: 'device_authorization_endpoint',
   TOKEN_ENDPOINT: 'token_endpoint',

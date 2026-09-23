@@ -18,7 +18,7 @@
 
 import { constants as fsConstants } from 'node:fs';
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { CredentialPermissionError } from './errors.js';
@@ -178,8 +178,11 @@ export class FileTokenStore implements TokenStore {
     try {
       await handle.writeFile(payload, 'utf8');
       // Flush before the rename so a crash cannot leave an empty file
-      // where a valid credential used to be.
-      await handle.sync().catch(() => undefined);
+      // where a valid credential used to be. A fsync failure means the
+      // write's durability is not guaranteed, so it must propagate rather
+      // than be swallowed — resolving `save()` successfully here would be a
+      // false promise of durability.
+      await handle.sync();
     } finally {
       await handle.close();
     }
@@ -190,9 +193,4 @@ export class FileTokenStore implements TokenStore {
       throw err;
     }
   }
-}
-
-/** Convenience for tests: a store rooted in a fresh temp directory. */
-export function temporaryCredentialsPath(prefix = 'apcore-credentials'): string {
-  return join(tmpdir(), `${prefix}-${Math.random().toString(36).slice(2, 10)}`, CREDENTIALS_FILE);
 }

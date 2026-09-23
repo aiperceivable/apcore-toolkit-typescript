@@ -85,32 +85,6 @@ export function resolveHttpVerb(method: string, pathHasParams: boolean): string 
 }
 
 /**
- * Generate a dot-separated suggested alias from HTTP route info.
- *
- * The alias is built from non-parameter path segments joined with the
- * resolved semantic verb. The output uses snake_case preserved from the
- * path; surface adapters apply their own naming conventions (e.g., CLI
- * converts underscores to hyphens).
- *
- * The GET-vs-list disambiguation checks whether the LAST path segment
- * is a path parameter (single-resource access) rather than whether the
- * path contains any parameters anywhere. This correctly treats nested
- * collection endpoints like `/orgs/{org_id}/members` as `"list"`.
- *
- * @example
- * generateSuggestedAlias('/tasks/user_data', 'POST');        // "tasks.user_data.create"
- * generateSuggestedAlias('/tasks/user_data', 'GET');         // "tasks.user_data.list"
- * generateSuggestedAlias('/tasks/user_data/{id}', 'GET');    // "tasks.user_data.get"
- * generateSuggestedAlias('/tasks/user_data/{id}', 'PUT');    // "tasks.user_data.update"
- * generateSuggestedAlias('/tasks/user_data/{id}', 'DELETE'); // "tasks.user_data.delete"
- * generateSuggestedAlias('/orgs/{org_id}/members', 'GET');   // "orgs.members.list"
- *
- * @param path - URL path (e.g., `/tasks/user_data/{id}`).
- * @param method - HTTP method (e.g., `POST`).
- * @returns Dot-separated alias string. If the path has no non-parameter
- *   segments, returns just the semantic verb (e.g., `"list"`).
- */
-/**
  * Return the set of parameter *names* declared in a URL path.
  *
  * Recognises both brace-style (`/users/{id}`) and colon-style
@@ -164,6 +138,32 @@ export function substitutePathParams(path: string, values: Record<string, unknow
   return parts.join('');
 }
 
+/**
+ * Generate a dot-separated suggested alias from HTTP route info.
+ *
+ * The alias is built from non-parameter path segments joined with the
+ * resolved semantic verb. The output uses snake_case preserved from the
+ * path; surface adapters apply their own naming conventions (e.g., CLI
+ * converts underscores to hyphens).
+ *
+ * The GET-vs-list disambiguation checks whether the LAST path segment
+ * is a path parameter (single-resource access) rather than whether the
+ * path contains any parameters anywhere. This correctly treats nested
+ * collection endpoints like `/orgs/{org_id}/members` as `"list"`.
+ *
+ * @example
+ * generateSuggestedAlias('/tasks/user_data', 'POST');        // "tasks.user_data.create"
+ * generateSuggestedAlias('/tasks/user_data', 'GET');         // "tasks.user_data.list"
+ * generateSuggestedAlias('/tasks/user_data/{id}', 'GET');    // "tasks.user_data.get"
+ * generateSuggestedAlias('/tasks/user_data/{id}', 'PUT');    // "tasks.user_data.update"
+ * generateSuggestedAlias('/tasks/user_data/{id}', 'DELETE'); // "tasks.user_data.delete"
+ * generateSuggestedAlias('/orgs/{org_id}/members', 'GET');   // "orgs.members.list"
+ *
+ * @param path - URL path (e.g., `/tasks/user_data/{id}`).
+ * @param method - HTTP method (e.g., `POST`).
+ * @returns Dot-separated alias string. If the path has no non-parameter
+ *   segments, returns just the semantic verb (e.g., `"list"`).
+ */
 export function generateSuggestedAlias(path: string, method: string): string {
   if (typeof path !== 'string') return 'unknown';
   if (typeof method !== 'string') return 'unknown';

@@ -40,7 +40,6 @@ import {
   BindingLoadError,
   DEFAULT_BINDING_PATTERN,
   matchesBindingPattern,
-  validateBindingPattern,
 } from '../src/binding-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -53,14 +52,6 @@ const FIXTURE_PATH = resolve(
   'fixtures',
   'binding_pattern.json',
 );
-
-interface ValidateCase {
-  id: string;
-  kind: 'validate';
-  description: string;
-  input: { pattern: string };
-  expected: { error: string };
-}
 
 interface MatchCase {
   id: string;
@@ -86,26 +77,12 @@ interface SelectCase {
   expected: { selected: string[] };
 }
 
-type Case = ValidateCase | MatchCase | SelectCase;
+type Case = MatchCase | SelectCase;
 
 function loadCases(): Case[] {
   if (!existsSync(FIXTURE_PATH)) return [];
   const data = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8')) as { test_cases: Case[] };
   return data.test_cases;
-}
-
-/**
- * Map a thrown error onto one of the two stable conformance identifiers.
- * The corpus asserts the identifier, not the human-readable wording — each
- * SDK phrases the reason idiomatically (see the spec's "Rejected patterns").
- */
-function classifyPatternError(err: unknown): string {
-  if (!(err instanceof BindingLoadError)) {
-    return `not_a_binding_load_error: ${String(err)}`;
-  }
-  if (/must not be empty/.test(err.reason)) return 'empty_pattern';
-  if (/file names only/.test(err.reason)) return 'path_separator';
-  return `unmapped_reason: ${err.reason}`;
 }
 
 /**
@@ -190,24 +167,6 @@ describe.skipIf(cases.length === 0)('BindingLoader pattern — cross-SDK conform
         ? `${tc.id}: SKIPPED — this platform cannot create symlinks (requires: symlinks)`
         : `${tc.id}: ${tc.description}`;
     runner(label, () => {
-      if (tc.kind === 'validate') {
-        // Point at a path that does not exist: validation must happen BEFORE
-        // any filesystem access, so the pattern error — not "path does not
-        // exist" — is what surfaces.
-        const missing = join(tmpdir(), 'apcore-toolkit-no-such-dir-for-pattern-validation');
-        let thrown: unknown;
-        try {
-          new BindingLoader().load(missing, false, false, tc.input.pattern);
-          throw new Error('expected load() to throw');
-        } catch (exc) {
-          thrown = exc;
-        }
-        expect(classifyPatternError(thrown), `Case ${tc.id}: ${tc.description}`).toBe(
-          tc.expected.error,
-        );
-        return;
-      }
-
       if (tc.kind === 'match') {
         expect(
           matchesBindingPattern(tc.input.pattern, tc.input.name),
@@ -295,32 +254,49 @@ describe('matchesBindingPattern — unit', () => {
   });
 });
 
-describe('validateBindingPattern — rejection paths', () => {
-  it('rejects an empty pattern with the `empty_pattern` reason', () => {
-    expect(() => validateBindingPattern('')).toThrow(BindingLoadError);
-    try {
-      validateBindingPattern('');
-    } catch (exc) {
-      expect(classifyPatternError(exc)).toBe('empty_pattern');
+describe('a pattern is never rejected', () => {
+  // Every string is a valid pattern and the loader never raises on one for
+  // syntactic reasons — apcore Algorithm A25 requirement 2, PROTOCOL_SPEC
+  // §5.12.6 clause 6. These cases asserted the inverse until 0.13.0.
+  const tmpDirs: string[] = [];
+  afterEach(() => {
+    for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  function seeded(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'apcore-neverreject-'));
+    tmpDirs.push(dir);
+    writeFileSync(
+      join(dir, 'a.binding.yaml'),
+      "spec_version: '1.0'\nbindings:\n  - module_id: x\n    target: m:f\n",
+    );
+    return dir;
+  }
+
+  it('yields an empty selection rather than throwing, for every odd pattern', () => {
+    for (const odd of ['', 'sub/*.binding.yaml', '**/*.binding.yaml', '*.binding.yaml/', '/', 'a[b', '{x,y}']) {
+      const dir = seeded();
+      expect(() => new BindingLoader().load(dir, false, false, odd), odd).not.toThrow();
+      expect(new BindingLoader().load(dir, false, false, odd), odd).toEqual([]);
     }
   });
 
-  it('rejects forward and back slashes with the `path_separator` reason', () => {
-    for (const bad of ['sub/*.binding.yaml', '**/*.binding.yaml', 'sub\\x.yaml', '*.binding.yaml/']) {
-      let thrown: unknown;
-      try {
-        validateBindingPattern(bad);
-      } catch (exc) {
-        thrown = exc;
-      }
-      expect(classifyPatternError(thrown), bad).toBe('path_separator');
-    }
+  it('treats a backslash as a literal, so such a file name is matchable', () => {
+    // A25 requirement 4: `\\` is a literal, not a path separator.
+    const dir = mkdtempSync(join(tmpdir(), 'apcore-backslash-'));
+    tmpDirs.push(dir);
+    writeFileSync(
+      join(dir, 'sub\\x.binding.yaml'),
+      "spec_version: '1.0'\nbindings:\n  - module_id: x\n    target: m:f\n",
+    );
+    const modules = new BindingLoader().load(dir, false, false, 'sub\\*.binding.yaml');
+    expect(modules.map((m) => m.moduleId)).toEqual(['x']);
   });
 
-  it('accepts the default and other separator-free patterns', () => {
-    for (const ok of [DEFAULT_BINDING_PATTERN, '*', 'api-*.cli.yaml', '[ab].binding.yaml']) {
-      expect(() => validateBindingPattern(ok)).not.toThrow();
-    }
+  it('still reports a missing path — the pattern no longer pre-empts it', () => {
+    expect(() =>
+      new BindingLoader().load(join(tmpdir(), 'apcore-nope-does-not-exist'), false, false, '**/*.binding.yaml'),
+    ).toThrow(BindingLoadError);
   });
 });
 
@@ -339,25 +315,15 @@ describe('BindingLoader.load — pattern integration', () => {
     return dir;
   }
 
-  it('rejects an empty pattern before touching the filesystem', () => {
+  it('surfaces a missing path as such, not as a pattern error', () => {
+    // Until 0.13.0 an odd pattern was rejected before the path was even
+    // stat'd, so this call reported the pattern. There is no pattern error
+    // any more, so the real fault is what surfaces.
     const missing = join(tmpdir(), 'apcore-toolkit-definitely-absent-dir');
     expect(existsSync(missing)).toBe(false);
-    try {
-      new BindingLoader().load(missing, false, false, '');
-      throw new Error('expected load() to throw');
-    } catch (exc) {
-      expect(classifyPatternError(exc)).toBe('empty_pattern');
-    }
-  });
-
-  it('rejects a path-separator pattern before touching the filesystem', () => {
-    const missing = join(tmpdir(), 'apcore-toolkit-definitely-absent-dir');
-    try {
-      new BindingLoader().load(missing, false, false, '**/*.binding.yaml');
-      throw new Error('expected load() to throw');
-    } catch (exc) {
-      expect(classifyPatternError(exc)).toBe('path_separator');
-    }
+    expect(() => new BindingLoader().load(missing, false, false, '**/*.binding.yaml')).toThrow(
+      BindingLoadError,
+    );
   });
 
   it('ignores `pattern` when the path names a file — like `recursive`', () => {
