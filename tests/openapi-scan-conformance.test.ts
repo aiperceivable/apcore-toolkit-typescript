@@ -8,11 +8,16 @@
 // rather than byte-for-byte. See
 // apcore-toolkit/docs/features/openapi-scanner.md.
 //
-// Fixture cases openapi_scan_021 through openapi_scan_023 install a named
-// test-only hook from HOOKS below — the fixture's `input.hooks` key names
-// which one, so all three SDKs install byte-identical hook behavior
+// Fixture cases openapi_scan_021 through openapi_scan_023 and
+// openapi_scan_029 install a named test-only hook from HOOKS below — the
+// fixture's `input.hooks` maps a hook slot (`derive_module_id`, ...) to a
+// hook name, so all three SDKs install byte-identical hook behavior
 // without serializing a callable through JSON. Mirrors
 // apcore-toolkit-python/tests/test_openapi_scan_conformance.py.
+//
+// An unknown hook name, a hook named under the wrong slot, or an unknown
+// `input.options` key fails the case rather than being dropped: a silently
+// ignored option would let a case pass against default behaviour.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
@@ -74,16 +79,27 @@ function alwaysReturnsDupOp(): string {
   return 'dup.op';
 }
 
+function alwaysReturnsMixedCaseId(): string {
+  return 'Custom-Space.GetThing';
+}
+
 const HOOKS: Record<string, [keyof OpenAPIScanOptions, unknown]> = {
   skip_if_x_skip_true: ['transformOperation', skipIfXSkipTrue],
   custom_name_for_operation_id_custom_else_default: ['deriveModuleId', customNameForOperationIdCustomElseDefault],
   always_returns_dup_op: ['deriveModuleId', alwaysReturnsDupOp],
+  always_returns_mixed_case_id: ['deriveModuleId', alwaysReturnsMixedCaseId],
+};
+
+// snake_case fixture hook slots -> camelCase OpenAPIScanOptions keys.
+const HOOK_SLOT_MAP: Record<string, keyof OpenAPIScanOptions> = {
+  transform_operation: 'transformOperation',
+  derive_module_id: 'deriveModuleId',
+  transform_module: 'transformModule',
 };
 
 // snake_case fixture option keys -> camelCase OpenAPIScanOptions keys.
-// None of the 24 fixture cases currently populate real filter/exclude
-// options (only the empty `{}` used by the hook cases), but this keeps the
-// harness correct if that changes.
+// Case openapi_scan_028 is the first to populate one
+// (`base_path_prefix`); the hook cases pass an empty `{}`.
 const OPTION_KEY_MAP: Record<string, keyof OpenAPIScanOptions> = {
   include: 'include',
   exclude: 'exclude',
@@ -126,15 +142,18 @@ describe.skipIf(cases.length === 0)('OpenAPIScanner — cross-SDK conformance', 
       const options: OpenAPIScanOptions = {};
       for (const [rawKey, rawVal] of Object.entries(tc.input.options ?? {})) {
         const mapped = OPTION_KEY_MAP[rawKey];
-        if (mapped) {
-          (options as Record<string, unknown>)[mapped] = rawVal;
-        }
+        if (!mapped) throw new Error(`unknown fixture option key: ${rawKey}`);
+        (options as Record<string, unknown>)[mapped] = rawVal;
       }
-      for (const [hookKey, hookName] of Object.entries(tc.input.hooks ?? {})) {
-        void hookKey;
+      for (const [hookSlot, hookName] of Object.entries(tc.input.hooks ?? {})) {
+        const slot = HOOK_SLOT_MAP[hookSlot];
+        if (!slot) throw new Error(`unknown fixture hook slot: ${hookSlot}`);
         const entry = HOOKS[hookName];
         if (!entry) throw new Error(`unknown fixture hook name: ${hookName}`);
         const [optKey, fn] = entry;
+        if (optKey !== slot) {
+          throw new Error(`fixture hook ${hookName} is a ${optKey} hook, named under ${hookSlot}`);
+        }
         (options as Record<string, unknown>)[optKey] = fn;
       }
 

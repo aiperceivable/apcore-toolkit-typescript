@@ -10,13 +10,13 @@
  * a separate file so this module stays importable from
  * `apcore-toolkit/browser` (see `src/browser/index.ts`).
  *
- * See `apcore-toolkit/docs/features/openapi-scanner.md` for the full V1
+ * See `apcore-toolkit/docs/features/openapi-scanner.md` for the full
  * specification, worked examples, and conformance corpus.
  */
 
 import { BaseScanner } from './scanner.js';
 import type { ScannedModule } from './types.js';
-import { createScannedModule } from './types.js';
+import { cloneModule, createScannedModule } from './types.js';
 import { extractInputSchema, extractOutputSchema, resolveRef } from './openapi.js';
 
 /**
@@ -46,38 +46,101 @@ const RECOGNIZED_METHODS: ReadonlySet<string> = new Set([
   'trace',
 ]);
 
-// The `u` flag makes this regex operate on Unicode CODE POINTS rather than
-// UTF-16 code UNITS. Without it, a non-BMP character (e.g. an emoji, encoded
-// as a UTF-16 surrogate pair) would be matched — and replaced with `_` —
-// once per surrogate half, producing two underscores where Python's
-// code-point-based `re` and Rust's Unicode-scalar-based `regex` crate each
-// produce exactly one. That would break the documented byte-for-byte
-// cross-SDK `derive_module_id` guarantee. DOT_RUN_RE and the leading/
-// trailing trim regexes below only ever match ASCII `.`/`_`, which are
-// single code units regardless of surrounding astral characters, so they
-// don't need the flag.
-const SANITIZE_RE = /[^A-Za-z0-9_.-]/gu;
-const DOT_RUN_RE = /\.+/g;
+// `normalizeModuleId` regexes. Every class is a literal ASCII range: no
+// `\d`, `\w` or `i` flag, each of which is Unicode-aware in at least one of
+// the three SDK regex engines (with `iu`, JS matches U+212A KELVIN SIGN
+// against `k`). The `u` flag is deliberately absent. Without it JS matches
+// UTF-16 code units, so an astral character (an emoji, a surrogate pair) is
+// replaced by `__` where Python and Rust emit one `_`; step 4's collapse of
+// `_` runs makes the result identical, which is why that step must stay.
+// Adding `u` would also be conformant; leaving it off keeps the regexes a
+// literal transcription of the spec's pseudo-code.
+const BOUNDARY_ACRONYM_RE = /([A-Z]+)([A-Z][a-z])/g;
+const BOUNDARY_WORD_RE = /([a-z0-9])([A-Z])/g;
+const OUTSIDE_ALPHABET_RE = /[^A-Za-z0-9_.]/g;
+const UNDERSCORE_RUN_RE = /_+/g;
+const EDGE_UNDERSCORES_RE = /^_+|_+$/g;
+const LEGAL_SEGMENT_RE = /^[a-z][a-z0-9_]*$/;
 
 /**
- * Sanitize a module-id candidate per the `deriveModuleId` algorithm.
+ * Project a module-ID candidate into apcore's Canonical ID alphabet
+ * (`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`, PROTOCOL_SPEC §2.7).
  *
- * Replace every character not in `[A-Za-z0-9_.-]` with `_`, collapse runs of
- * `.` into a single `.`, then strip leading/trailing `.` and `_`.
+ * Implements `normalize_module_id` from
+ * `apcore-toolkit/docs/features/openapi-scanner.md` § `module_id`
+ * Derivation, byte-for-byte:
+ *
+ * 1. insert `_` at word boundaries, in order: `([A-Z]+)([A-Z][a-z])` then
+ *    `([a-z0-9])([A-Z])`, each a single left-to-right replace-all;
+ * 2. replace every character not in `[A-Za-z0-9_.]` with `_`;
+ * 3. lowercase (only ASCII letters remain, so this cannot reintroduce a
+ *    non-ASCII character — U+212A lowercases to ASCII `k`, which is why this
+ *    step comes after step 2);
+ * 4. split on `.`; per segment collapse `_` runs and strip edge `_`; drop
+ *    empty segments;
+ * 5. join with `.`.
+ *
+ * Idempotent on its own output. The result can still be illegal (a segment
+ * beginning with a digit, or empty); the scanner reports that, this function
+ * does not.
+ *
+ * @internal Exported from this file for unit tests only. It is deliberately
+ * not re-exported from `apcore-toolkit` or `apcore-toolkit/browser`: the
+ * public surface is {@link deriveModuleId} and {@link OpenAPIScanner.scan}.
  */
-function sanitize(candidate: string): string {
-  let s = candidate.replace(SANITIZE_RE, '_');
-  s = s.replace(DOT_RUN_RE, '.');
-  return s.replace(/^[._]+/, '').replace(/[._]+$/, '');
+export function normalizeModuleId(s: string): string {
+  const ascii = s
+    .replace(BOUNDARY_ACRONYM_RE, '$1_$2')
+    .replace(BOUNDARY_WORD_RE, '$1_$2')
+    .replace(OUTSIDE_ALPHABET_RE, '_')
+    .toLowerCase();
+  return ascii
+    .split('.')
+    .map((seg) => seg.replace(UNDERSCORE_RUN_RE, '_').replace(EDGE_UNDERSCORES_RE, ''))
+    .filter((seg) => seg !== '')
+    .join('.');
 }
 
 /**
- * Derive a stable, byte-identical `moduleId` for an OpenAPI operation.
+ * The first dot-separated segment of `moduleId` that fails
+ * `^[a-z][a-z0-9_]*$`, or `null` when every segment is legal. An empty ID
+ * has one segment, the empty string, which fails.
+ */
+function illegalSegment(moduleId: string): string | null {
+  for (const seg of moduleId.split('.')) {
+    if (!LEGAL_SEGMENT_RE.test(seg)) return seg;
+  }
+  return null;
+}
+
+/**
+ * The pinned legality warning (spec § What normalisation will not repair).
+ * The snake_case names are part of the byte-pinned text in every SDK.
+ */
+function legalityWarning(moduleId: string, segment: string): string {
+  return (
+    `module_id '${moduleId}' is not a legal apcore module ID: segment '${segment}' ` +
+    'must match ^[a-z][a-z0-9_]*$; name this operation with a derive_module_id ' +
+    'or transform_module hook'
+  );
+}
+
+/**
+ * Derive a stable, byte-identical `moduleId` for an OpenAPI operation, in
+ * apcore's Canonical ID alphabet.
  *
- * See `apcore-toolkit/docs/features/openapi-scanner.md` § `module_id`
+ * A non-empty string `operationId` is converted to snake_case
+ * (`getUserById` → `get_user_by_id`); otherwise the ID is built from the
+ * path segments plus the method (`GET /users/{user_id}` →
+ * `users.user_id.get`), and `"root.<method>"` is the last resort. See
+ * `apcore-toolkit/docs/features/openapi-scanner.md` § `module_id`
  * Derivation for the algorithm and worked examples. This function is the
  * primary subject of the cross-SDK conformance corpus — implementations
  * MUST match it byte-for-byte.
+ *
+ * The result is a legal apcore ID unless a segment begins with a digit
+ * (`POST /v1/2fa` → `v1.2fa.post`). This function does not warn about
+ * that; {@link OpenAPIScanner.scan} does.
  *
  * @param path - The OpenAPI path template (e.g. `"/users/{user_id}"`).
  * @param method - The HTTP method key as written in the document (e.g. `"get"`).
@@ -91,25 +154,22 @@ export function deriveModuleId(
 ): string {
   const operationId = operation['operationId'];
   if (typeof operationId === 'string' && operationId !== '') {
-    const candidate = sanitize(operationId);
+    const candidate = normalizeModuleId(operationId);
     if (candidate) return candidate;
   }
 
-  const rawSegments = path.split('/').filter((seg) => seg !== '');
-  if (rawSegments.length === 0) {
-    return `root.${method.toLowerCase()}`;
+  const segments = path
+    .split('/')
+    .filter((seg) => seg !== '')
+    .map((seg) =>
+      seg.length >= 2 && seg.startsWith('{') && seg.endsWith('}') ? seg.slice(1, -1) : seg,
+    );
+  if (segments.length > 0) {
+    const candidate = normalizeModuleId([...segments, method].join('.'));
+    if (candidate) return candidate;
   }
 
-  const segments = rawSegments.map((seg) =>
-    seg.length >= 2 && seg.startsWith('{') && seg.endsWith('}') ? seg.slice(1, -1) : seg,
-  );
-
-  let candidate = [...segments, method].join('.').toLowerCase();
-  candidate = sanitize(candidate);
-  if (!candidate) {
-    return `root.${method.toLowerCase()}`;
-  }
-  return candidate;
+  return `root.${method.toLowerCase()}`;
 }
 
 /** Depth-first collect every `$ref` string appearing under `node`. */
@@ -233,7 +293,11 @@ export interface OpenAPIScanOptions {
   include?: string;
   /** Regex forwarded to `filterModules`; matching module IDs are removed. */
   exclude?: string;
-  /** Prepended to every derived `moduleId` as `"<prefix>.<id>"`, before filtering/dedup. */
+  /**
+   * Prepended to every derived `moduleId` as `"<prefix>.<id>"`, before
+   * filtering/dedup. Part of the final ID, so it is normalised with it
+   * (`"Pet-Store"` → `pet_store.users.get`).
+   */
   basePathPrefix?: string;
   /** When `false`, operations with `deprecated: true` are omitted entirely. Default `true`. */
   includeDeprecated?: boolean;
@@ -243,9 +307,17 @@ export interface OpenAPIScanOptions {
     method: string,
     operation: Record<string, unknown>,
   ) => Record<string, unknown> | null;
-  /** Override the naming algorithm. Returning `null` falls back to {@link deriveModuleId}. */
+  /**
+   * Override the naming algorithm. Returning `null` falls back to
+   * {@link deriveModuleId}. The hook chooses the words; the scanner owns the
+   * alphabet — the returned ID is normalised like the default derivation
+   * (`"Custom-Space.GetThing"` → `custom_space.get_thing`).
+   */
   deriveModuleId?: (path: string, method: string, operation: Record<string, unknown>) => string | null;
-  /** Adjust the finished module. Returning `null` drops it from the result. */
+  /**
+   * Adjust the finished module. Returning `null` drops it from the result.
+   * A `moduleId` it sets is normalised, and checked for legality, afterwards.
+   */
   transformModule?: (module: ScannedModule) => ScannedModule | null;
 }
 
@@ -255,6 +327,10 @@ export interface OpenAPIScanOptions {
  * Pure and synchronous: `scan()` accepts an already-parsed document and
  * performs no I/O. Use `loadSpec` (from `./openapi-loader.js`) to
  * fetch/parse a document first.
+ *
+ * Every emitted `moduleId` is in apcore's Canonical ID alphabet. One that is
+ * still not a legal apcore ID (a segment beginning with a digit, or an empty
+ * ID from a hook) is emitted anyway, with a legality warning in `warnings`.
  */
 export class OpenAPIScanner extends BaseScanner {
   scan(spec: Record<string, unknown>, options: OpenAPIScanOptions = {}): ScannedModule[] {
@@ -391,6 +467,25 @@ export class OpenAPIScanner extends BaseScanner {
           const transformed = transformModule(module);
           if (transformed === null) continue;
           module = transformed;
+        }
+
+        // The scanner owns the alphabet: normalise the FINAL ID — after the
+        // derive_module_id hook, basePathPrefix and transformModule — so the
+        // filters match, and deduplication resolves, the ID actually emitted.
+        // Idempotent, so a default-derived ID passes through unchanged. What
+        // normalisation cannot repair (a digit-leading segment, or an empty
+        // ID from a hook) is reported, not invented: the module is still
+        // emitted, with the pinned legality warning.
+        const finalId = normalizeModuleId(module.moduleId);
+        const badSegment = illegalSegment(finalId);
+        if (finalId !== module.moduleId || badSegment !== null) {
+          module = cloneModule(module, {
+            moduleId: finalId,
+            warnings:
+              badSegment === null
+                ? module.warnings
+                : [...module.warnings, legalityWarning(finalId, badSegment)],
+          });
         }
 
         modules.push(module);

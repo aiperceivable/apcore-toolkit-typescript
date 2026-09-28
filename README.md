@@ -232,9 +232,9 @@ The **Browser** column marks whether a symbol is also re-exported from
 | `resolveSchema()` | ✓ | Resolve schema with single-level `$ref` support |
 | `deepResolveRefs()` | ✓ | Recursively resolve all nested `$ref` pointers in a schema |
 | `enrichSchemaDescriptions()` | ✓ | Merge parameter descriptions into schema |
-| `OpenAPIScanner` _(v0.11.0)_ | ✓ | Turn an OpenAPI 3.x document into `ScannedModule[]`. Pure and synchronous — no I/O |
+| `OpenAPIScanner` _(v0.11.0)_ | ✓ | Turn an OpenAPI 3.x document into `ScannedModule[]`. Pure and synchronous — no I/O. Every `moduleId` is in apcore's Canonical ID alphabet, including IDs from `basePathPrefix` and the hooks; one still illegal (a digit-leading segment such as `v1.2fa.post`) is emitted with a warning |
 | `OpenAPIScanOptions` _(v0.11.0)_ | ✓ | Options for `OpenAPIScanner.scan()` |
-| `deriveModuleId()` _(v0.11.0)_ | ✓ | Derive a stable, byte-identical `moduleId` for an OpenAPI operation; primary subject of the cross-SDK conformance corpus |
+| `deriveModuleId()` _(v0.11.0)_ | ✓ | Derive a stable, byte-identical `moduleId` for an OpenAPI operation, in snake_case (`getUserById` → `get_user_by_id`, `GET /user-profiles/{userId}` → `user_profiles.user_id.get`); primary subject of the cross-SDK conformance corpus |
 | `InvalidSpecError` _(v0.11.0)_ | ✓ | Thrown by `OpenAPIScanner.scan()` when the input isn't a recognisable OpenAPI 3.0.x/3.1.x document |
 | `loadSpec()` _(v0.11.0)_ | | Fetch/parse an OpenAPI document from a local filesystem path or an `http(s)://` URL |
 | `LoadSpecOptions` _(v0.11.0)_ | | Options for `loadSpec()` |
