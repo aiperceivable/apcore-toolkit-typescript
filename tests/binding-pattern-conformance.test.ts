@@ -257,7 +257,7 @@ describe('matchesBindingPattern — unit', () => {
 describe('a pattern is never rejected', () => {
   // Every string is a valid pattern and the loader never raises on one for
   // syntactic reasons — apcore Algorithm A25 requirement 2, PROTOCOL_SPEC
-  // §5.12.6 clause 6. These cases asserted the inverse until 0.13.0.
+  // §5.12.6 clause 6. These cases asserted the inverse in a pre-release draft of 0.12.0.
   const tmpDirs: string[] = [];
   afterEach(() => {
     for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -316,7 +316,7 @@ describe('BindingLoader.load — pattern integration', () => {
   }
 
   it('surfaces a missing path as such, not as a pattern error', () => {
-    // Until 0.13.0 an odd pattern was rejected before the path was even
+    // In a pre-release draft of 0.12.0 an odd pattern was rejected before the path was even
     // stat'd, so this call reported the pattern. There is no pattern error
     // any more, so the real fault is what surfaces.
     const missing = join(tmpdir(), 'apcore-toolkit-definitely-absent-dir');
