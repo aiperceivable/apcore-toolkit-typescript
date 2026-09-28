@@ -49,12 +49,19 @@ describe('normalizeModuleId', () => {
     expect(normalizeModuleId(input)).toBe(expected);
   });
 
+  // Runs of `_` and a trailing `_` are kept: collapsing or stripping them
+  // would rewrite IDs apcore already accepts (FastAPI's generated ones).
+  // Only a LEADING `_` goes, since no legal segment starts with one.
   it.each([
-    ['get_product_product__product_id__get', 'get_product_product_product_id_get'],
-    ['__private__', 'private'],
-    ['a__.__b', 'a.b'],
+    ['get_product_product__product_id__get', 'get_product_product__product_id__get'],
+    ['read_item_items__item_id__get', 'read_item_items__item_id__get'],
+    ['__private__', 'private__'],
+    ['a__.__b', 'a__.b'],
+    ['abc_', 'abc_'],
+    ['a_.b_', 'a_.b_'],
+    ['list-', 'list_'],
     ['list-pets', 'list_pets'],
-  ])('underscore runs and hyphens: %j -> %j', (input, expected) => {
+  ])('underscores and hyphens: %j -> %j', (input, expected) => {
     expect(normalizeModuleId(input)).toBe(expected);
   });
 
@@ -72,19 +79,24 @@ describe('normalizeModuleId', () => {
   // alphabet replace runs BEFORE lowercasing, so it becomes `_` and cannot
   // survive as a letter; nor does `[A-Z]` (no `i` flag) see it as a capital.
   it('replaces U+212A KELVIN SIGN instead of lowercasing it to ASCII k', () => {
-    expect('K'.toLowerCase()).toBe('k'); // the trap this ordering avoids
-    expect(normalizeModuleId('Kelvin')).toBe('elvin');
-    expect(normalizeModuleId('getKelvin')).toBe('get_elvin');
-    expect(normalizeModuleId('K')).toBe('');
+    expect('\u212A'.toLowerCase()).toBe('k'); // the trap this ordering avoids
+    expect(normalizeModuleId('\u212Aelvin')).toBe('elvin');
+    expect(normalizeModuleId('get\u212Aelvin')).toBe('get_elvin');
+    expect(normalizeModuleId('\u212A')).toBe('');
   });
 
   it('replaces other non-ASCII letters without inserting a word boundary', () => {
-    expect(normalizeModuleId('caféMenu')).toBe('caf_menu');
+    expect(normalizeModuleId('caf\u00E9Menu')).toBe('caf_menu');
   });
 
-  it('collapses the two code units of an astral character to one underscore', () => {
+  // One `_` per CODE POINT (the `u` flag). Runs are not collapsed, so a
+  // per-code-unit replace would leave `a__b` here where Python and Rust
+  // produce `a_b` — fixture case 025 pins it.
+  it('replaces an astral character (two UTF-16 code units) with exactly one underscore', () => {
+    expect(normalizeModuleId('a\u{1F600}b')).toBe('a_b');
     expect(normalizeModuleId('create\u{1F600}User')).toBe('create_user');
-    expect(normalizeModuleId('a\u{1F600}\u{1F600}b')).toBe('a_b');
+    expect(normalizeModuleId('a\u{1F600}\u{1F600}b')).toBe('a__b');
+    expect(normalizeModuleId('\u{1F600}emoji')).toBe('emoji');
     expect(normalizeModuleId('\u{1F600}')).toBe('');
   });
 
@@ -93,11 +105,39 @@ describe('normalizeModuleId', () => {
     expect(normalizeModuleId('v1.2fa.post')).toBe('v1.2fa.post');
   });
 
+  // The spec's MUST: a legal apcore ID is returned unchanged. Checked over a
+  // deterministic pseudo-random sample of the Canonical ID grammar, weighted
+  // towards `_` runs and trailing `_`.
+  it('returns every legal apcore ID unchanged', () => {
+    const legal = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
+    const first = 'abcxyz';
+    const rest = 'abcxyz019___';
+    let seed = 0x2f6e2b1;
+    const next = (n: number): number => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return (seed >>> 8) % n;
+    };
+    for (let i = 0; i < 5000; i++) {
+      const segs: string[] = [];
+      const nSegs = 1 + next(4);
+      for (let j = 0; j < nSegs; j++) {
+        let seg = first[next(first.length)]!;
+        const len = next(7);
+        for (let k = 0; k < len; k++) seg += rest[next(rest.length)]!;
+        segs.push(seg);
+      }
+      const id = segs.join('.');
+      expect(legal.test(id), id).toBe(true);
+      expect(normalizeModuleId(id), id).toBe(id);
+    }
+  });
+
   it('is idempotent on its own output', () => {
     const inputs = [
       'getHTTPResponse', 'OAuth2Token', 'getIDs', 'v2Items', '__private__',
-      'Custom-Space.GetThing', 'Kelvin', 'create\u{1F600}User', 'x..y',
-      'already_snake.case', '3ds', 'Pet-Store.users.get', '',
+      'Custom-Space.GetThing', '\u212Aelvin', 'create\u{1F600}User', 'x..y',
+      'already_snake.case', '3ds', 'Pet-Store.users.get', '', '_a__b_.__c',
+      'a\u{1F600}\u{1F600}b',
     ];
     for (const input of inputs) {
       const once = normalizeModuleId(input);
@@ -118,6 +158,21 @@ describe('deriveModuleId', () => {
     expect(deriveModuleId('/users/{id}', 'get', { operationId: 'getUserById' })).toBe('get_user_by_id');
   });
 
+  it('keeps an operationId that is already a legal apcore ID', () => {
+    expect(
+      deriveModuleId('/items/{item_id}', 'get', { operationId: 'read_item_items__item_id__get' }),
+    ).toBe('read_item_items__item_id__get');
+  });
+
+  // Only in the operationId branch, as 0.11.0's sanitize did; the path
+  // branch and the scanner's final normalisation keep a trailing `_`.
+  it('strips a trailing underscore from the operationId branch only', () => {
+    expect(deriveModuleId('/h', 'get', { operationId: 'getUser_' })).toBe('get_user');
+    expect(deriveModuleId('/x', 'get', { operationId: 'list-' })).toBe('list');
+    expect(deriveModuleId('/x', 'get', { operationId: 'a_.b_' })).toBe('a_.b');
+    expect(deriveModuleId('/a_', 'get', {})).toBe('a_.get');
+  });
+
   it('falls back to the path when the operationId normalises to empty', () => {
     expect(deriveModuleId('/widgets', 'get', { operationId: '\u{1F600}' })).toBe('widgets.get');
     expect(deriveModuleId('/widgets', 'get', { operationId: '__' })).toBe('widgets.get');
@@ -129,8 +184,14 @@ describe('deriveModuleId', () => {
     ['/a b/c', 'post', 'a_b.c.post'],
     ['/users', 'GET', 'users.get'],
     ['/{}/x', 'get', 'x.get'],
+    ['/a__b/{_id}', 'get', 'a__b.id.get'],
+    ['/a.b', 'get', 'a.b.get'],
     ['/', 'get', 'root.get'],
-  ])('normalises the path branch: %s %s -> %j', (path, method, expected) => {
+    // No segment survives normalisation: the same fallback as `GET /`.
+    ['/-', 'get', 'root.get'],
+    ['/{}', 'post', 'root.post'],
+    ['/.', 'get', 'root.get'],
+  ])('normalises the path branch one segment at a time: %s %s -> %j', (path, method, expected) => {
     expect(deriveModuleId(path, method, {})).toBe(expected);
   });
 
@@ -157,6 +218,12 @@ describe('OpenAPIScanner — final module_id normalisation and legality', () => 
     const [mod] = scan({ '/x': { get: { operationId: '3ds', ...OK } } });
     expect(mod!.moduleId).toBe('3ds');
     expect(mod!.warnings).toEqual([legalityWarning('3ds', '3ds')]);
+  });
+
+  it('keeps a legal ID a hook returns, trailing underscore included', () => {
+    const [mod] = scan({ '/x': { get: OK } }, { deriveModuleId: () => 'abc_' });
+    expect(mod!.moduleId).toBe('abc_');
+    expect(mod!.warnings).toEqual([]);
   });
 
   it('warns with an empty segment when a hook produces an empty ID', () => {
@@ -210,16 +277,31 @@ describe('OpenAPIScanner — final module_id normalisation and legality', () => 
     ]);
   });
 
-  it('checks legality before deduplication, so the warning names the pre-rename ID', () => {
+  it('checks legality after deduplication, so the warning names the emitted ID', () => {
     const modules = scan({
       '/a': { get: { operationId: '3ds', ...OK } },
       '/b': { get: { operationId: '3ds', ...OK } },
     });
     expect(modules.map((m) => m.moduleId)).toEqual(['3ds', '3ds_2']);
+    expect(modules[0]!.warnings).toEqual([legalityWarning('3ds', '3ds')]);
     expect(modules[1]!.warnings).toEqual([
-      legalityWarning('3ds', '3ds'),
       "Module ID renamed from '3ds' to '3ds_2' to avoid collision",
+      legalityWarning('3ds_2', '3ds_2'),
     ]);
+  });
+
+  it('does not warn about a module the include filter removed', () => {
+    const modules = scan(
+      { '/v1/2fa': { post: OK }, '/users': { get: OK } },
+      { include: '^users' },
+    );
+    expect(modules.map((m) => m.moduleId)).toEqual(['users.get']);
+    expect(modules[0]!.warnings).toEqual([]);
+  });
+
+  it('sets no suggestedAlias (a deliberate spec decision)', () => {
+    const [mod] = scan({ '/users/{id}': { get: { operationId: 'getUserById', ...OK } } });
+    expect(mod!.suggestedAlias).toBeNull();
   });
 });
 
@@ -242,10 +324,10 @@ describe('OpenAPIScanner — malformed field-type handling', () => {
     expect(modules[0]!.moduleId).toBe('widgets.get');
   });
 
-  // A non-BMP character (an emoji, a UTF-16 surrogate pair) is replaced
-  // per code UNIT in JS — `__` — where Python and Rust emit one `_`. The
-  // `_`-run collapse makes the three SDKs agree; the emoji sits mid-string
-  // so an edge-strip cannot mask a double-underscore regression.
+  // A non-BMP character (an emoji, a UTF-16 surrogate pair) must become ONE
+  // `_`, as in Python and Rust: the replace needs the `u` flag, because runs
+  // of `_` are no longer collapsed. The emoji sits mid-string so an
+  // edge-strip cannot mask a double-underscore regression.
   it('normalises a non-BMP character (emoji) in operationId to exactly one underscore', () => {
     const id = deriveModuleId('/widgets', 'get', { operationId: 'create\u{1F600}User' });
     expect(id).toBe('create_user');
@@ -266,5 +348,19 @@ describe('OpenAPIScanner — malformed field-type handling', () => {
     });
     expect(modules).toHaveLength(1);
     expect(modules[0]!.tags).toEqual(['users', 'active']);
+  });
+});
+
+describe('normalizeModuleId running time', () => {
+  it('is linear on a long run of capitals', () => {
+    // The scanner reads documents it did not write. The `([A-Z]+)` form of the
+    // acronym rule rescans a run of capitals from every start position; the
+    // pinned `([A-Z])` form is linear and inserts the `_` in the same place.
+    const crafted = 'A'.repeat(200_000) + 'b';
+    const start = performance.now();
+    const result = normalizeModuleId(crafted);
+    const elapsedMs = performance.now() - start;
+    expect(result).toBe('a'.repeat(199_999) + '_ab');
+    expect(elapsedMs).toBeLessThan(2000);
   });
 });

@@ -8,8 +8,8 @@
 // rather than byte-for-byte. See
 // apcore-toolkit/docs/features/openapi-scanner.md.
 //
-// Fixture cases openapi_scan_021 through openapi_scan_023 and
-// openapi_scan_029 install a named test-only hook from HOOKS below — the
+// Fixture cases openapi_scan_021 through openapi_scan_023, openapi_scan_029
+// and openapi_scan_032 install a named test-only hook from HOOKS below — the
 // fixture's `input.hooks` maps a hook slot (`derive_module_id`, ...) to a
 // hook name, so all three SDKs install byte-identical hook behavior
 // without serializing a callable through JSON. Mirrors
@@ -83,11 +83,16 @@ function alwaysReturnsMixedCaseId(): string {
   return 'Custom-Space.GetThing';
 }
 
+function alwaysReturnsLegalTrailingUnderscoreId(): string {
+  return 'abc_';
+}
+
 const HOOKS: Record<string, [keyof OpenAPIScanOptions, unknown]> = {
   skip_if_x_skip_true: ['transformOperation', skipIfXSkipTrue],
   custom_name_for_operation_id_custom_else_default: ['deriveModuleId', customNameForOperationIdCustomElseDefault],
   always_returns_dup_op: ['deriveModuleId', alwaysReturnsDupOp],
   always_returns_mixed_case_id: ['deriveModuleId', alwaysReturnsMixedCaseId],
+  always_returns_legal_trailing_underscore_id: ['deriveModuleId', alwaysReturnsLegalTrailingUnderscoreId],
 };
 
 // snake_case fixture hook slots -> camelCase OpenAPIScanOptions keys.
