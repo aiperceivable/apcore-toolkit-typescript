@@ -183,9 +183,8 @@ export class BindingLoader extends BindingParser {
    *   Default: {@link DEFAULT_BINDING_PATTERN}. Ignored when `filePath` names
    *   a file — a caller that explicitly names one file has already made the
    *   selection.
-   * @throws {BindingLoadError} when `pattern` is empty or contains a path
-   *   separator (raised before any filesystem access), when the path is
-   *   missing, when YAML is malformed, or when any entry fails validation.
+   * @throws {BindingLoadError} when the path is missing, YAML is malformed,
+   *   or any document or entry fails validation. Every string is a valid pattern.
    */
   load(
     filePath: string,

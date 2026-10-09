@@ -74,6 +74,27 @@ describe('BindingLoader.loadData', () => {
     expect(modules).toHaveLength(1);
   });
 
+  it.each(['input_schema', 'output_schema'] as const)(
+    'rejects a loose entry with only %s',
+    (schemaField) => {
+      const otherSchemaField =
+        schemaField === 'input_schema' ? 'output_schema' : 'input_schema';
+      const entry = {
+        module_id: 'x.y',
+        target: 'p:f',
+        [schemaField]: { type: 'object' },
+      };
+
+      expect(() => loader.loadData({ bindings: [entry] })).toThrow(
+        /input_schema and output_schema must be supplied together/,
+      );
+      expect(() => loader.loadData({ bindings: [entry] }, { strict: true })).toThrow(
+        /input_schema and output_schema must be supplied together/,
+      );
+      expect(entry).not.toHaveProperty(otherSchemaField);
+    },
+  );
+
   it('always fails on missing module_id', () => {
     expect(() => loader.loadData({ bindings: [{ target: 'p:f' }] })).toThrow(BindingLoadError);
   });
@@ -141,7 +162,12 @@ describe('BindingLoader.loadData', () => {
       type: 'object',
       properties: { id: { type: 'integer' } },
     } as Record<string, unknown>;
-    const entry = { module_id: 'x', target: 'p:f', input_schema: sourceSchema };
+    const entry = {
+      module_id: 'x',
+      target: 'p:f',
+      input_schema: sourceSchema,
+      output_schema: { type: 'object' },
+    };
     const m = loader.loadData({ bindings: [entry] })[0];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (m.inputSchema.properties as any).id.type = 'string';
@@ -161,6 +187,37 @@ describe('BindingLoader.loadData', () => {
 
   it('fails when bindings key missing', () => {
     expect(() => loader.loadData({ spec_version: '1.0' })).toThrow(/bindings/);
+  });
+
+  it('rejects unknown top-level document keys', () => {
+    const document = { bindings: [MINIMAL_ENTRY], generated_at: '2026-10-08' };
+    expect(() => loader.loadData(document)).toThrow(
+      /unknown top-level binding document key: generated_at/,
+    );
+    expect(() => loader.loadData(document, { strict: true })).toThrow(
+      /unknown top-level binding document key: generated_at/,
+    );
+  });
+
+  it('rejects unknown binding-entry keys while preserving module context', () => {
+    const document = { bindings: [{ ...MINIMAL_ENTRY, auto_schema: true }] };
+    for (const options of [undefined, { strict: true }]) {
+      try {
+        loader.loadData(document, options);
+        expect.fail('expected BindingLoadError');
+      } catch (exc) {
+        expect(exc).toBeInstanceOf(BindingLoadError);
+        const error = exc as BindingLoadError;
+        expect(error.reason).toBe('unknown binding entry key: auto_schema');
+        expect(error.moduleId).toBe('x.y');
+      }
+    }
+  });
+
+  it('preserves every supported pure-data entry field', () => {
+    const modules = loader.loadData({ bindings: [FULL_ENTRY] });
+    expect(modules).toHaveLength(1);
+    expect(modules[0].warnings).toEqual(['stale']);
   });
 
   it('fails when top-level is not a mapping', () => {
@@ -225,7 +282,14 @@ describe('BindingLoader.loadData', () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       const m = loader.loadData({
-        bindings: [{ module_id: 'x', target: 'p:f', input_schema: 'string' }],
+        bindings: [
+          {
+            module_id: 'x',
+            target: 'p:f',
+            input_schema: 'string',
+            output_schema: { type: 'object' },
+          },
+        ],
       })[0];
       expect(m.inputSchema).toEqual({});
       expect(

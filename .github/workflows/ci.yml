@@ -9,9 +9,28 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apcore-toolkit-typescript
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: apcore-toolkit-typescript
+
+      - name: Checkout canonical conformance fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: aiperceivable/apcore-toolkit
+          ref: main
+          path: apcore-toolkit
+
+      - name: Verify binding-structure fixture
+        run: |
+          if [ ! -s ../apcore-toolkit/conformance/fixtures/binding_structure.json ]; then
+            echo "::error::Publish the binding-structure fixture to apcore-toolkit main before merging this SDK change."
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -24,7 +43,7 @@ jobs:
           version: 10
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm --ignore-workspace install --frozen-lockfile
 
       - name: Set up Python
         uses: actions/setup-python@v4

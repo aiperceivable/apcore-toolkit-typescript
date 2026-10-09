@@ -21,6 +21,27 @@ import { PROTO_DENY } from './safe-keys.js';
 const SUPPORTED_SPEC_VERSIONS = new Set(['1.0']);
 const LOOSE_REQUIRED = ['module_id', 'target'] as const;
 const STRICT_EXTRA = ['input_schema', 'output_schema'] as const;
+const TOP_LEVEL_KEYS = new Set(['spec_version', 'bindings']);
+
+// This loader is intentionally a pure-data projection into ScannedModule.
+// Accept only fields it preserves; runtime binding modes such as auto_schema
+// and schema_ref belong to apcore-js's target-loading BindingLoader.
+const ENTRY_KEYS = new Set([
+  'module_id',
+  'target',
+  'description',
+  'input_schema',
+  'output_schema',
+  'annotations',
+  'tags',
+  'version',
+  'metadata',
+  'documentation',
+  'display',
+  'suggested_alias',
+  'examples',
+  'warnings',
+]);
 
 /** Options for {@link BindingParser} / {@link BindingLoader} methods. */
 export interface BindingLoadOptions {
@@ -95,6 +116,7 @@ export function parseBindingDocument(
     });
   }
   const data = raw as Record<string, unknown>;
+  rejectUnknownKeys(data, TOP_LEVEL_KEYS, 'top-level binding document', filePath);
   checkSpecVersion(data['spec_version'], filePath);
 
   const bindings = data['bindings'];
@@ -112,7 +134,9 @@ export function parseBindingDocument(
         filePath,
       });
     }
-    return parseEntry(entry as Record<string, unknown>, filePath, strict);
+    const binding = entry as Record<string, unknown>;
+    rejectUnknownKeys(binding, ENTRY_KEYS, 'binding entry', filePath);
+    return parseEntry(binding, filePath, strict);
   });
 }
 
@@ -165,6 +189,16 @@ function parseEntry(
   filePath: string | null,
   strict: boolean,
 ): ScannedModule {
+  const hasInputSchema = 'input_schema' in entry;
+  const hasOutputSchema = 'output_schema' in entry;
+  if (hasInputSchema !== hasOutputSchema) {
+    throw new BindingLoadError({
+      reason: 'input_schema and output_schema must be supplied together',
+      filePath,
+      moduleId: typeof entry['module_id'] === 'string' ? entry['module_id'] : null,
+    });
+  }
+
   const required: readonly string[] = strict
     ? [...LOOSE_REQUIRED, ...STRICT_EXTRA]
     : LOOSE_REQUIRED;
@@ -184,6 +218,17 @@ function parseEntry(
   }
 
   const moduleId = String(entry['module_id']);
+  const tags = entry['tags'];
+  if (tags != null && !Array.isArray(tags)) {
+    if (strict) {
+      throw new BindingLoadError({
+        reason: 'tags must be a list',
+        filePath,
+        moduleId,
+      });
+    }
+    console.warn(`BindingLoader: tags for module ${moduleId} is not a list; using empty []`);
+  }
   return createScannedModule({
     moduleId,
     description: (entry['description'] as string | undefined) ?? '',
@@ -200,6 +245,25 @@ function parseEntry(
     display: asRecordOrNull(entry['display'], 'display', moduleId),
     warnings: asStringArray(entry['warnings']),
   });
+}
+
+function rejectUnknownKeys(
+  value: Record<string, unknown>,
+  supportedKeys: ReadonlySet<string>,
+  scope: string,
+  filePath: string | null,
+): void {
+  const unknownKeys = Object.keys(value).filter((key) => !supportedKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw new BindingLoadError({
+      reason: `unknown ${scope} key${unknownKeys.length === 1 ? '' : 's'}: ${unknownKeys.join(', ')}`,
+      filePath,
+      moduleId:
+        scope === 'binding entry' && typeof value['module_id'] === 'string'
+          ? value['module_id']
+          : null,
+    });
+  }
 }
 
 /**
