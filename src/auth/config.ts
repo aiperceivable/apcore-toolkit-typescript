@@ -604,21 +604,30 @@ export class DeviceAuthConfig {
     const candidates = discoveryCandidates(this.issuer);
     const failures: string[] = [];
     for (const url of candidates) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.httpTimeoutMs);
       let response: Response;
+      let rawBody: string;
       try {
         response = await fetchImpl(url, {
           method: 'GET',
           headers: { Accept: 'application/json', ...this.extraHeaders },
+          signal: controller.signal,
         });
+        if (response.status < 200 || response.status >= 300) {
+          failures.push(`${url}: HTTP ${String(response.status)}`);
+          // This candidate is rejected without reading its body. Abort to
+          // release the connection rather than leaving an unread stream.
+          controller.abort();
+          continue;
+        }
+        rawBody = await response.text();
       } catch (err) {
         failures.push(`${url}: transport error (${err instanceof Error ? err.message : String(err)})`);
         continue;
+      } finally {
+        clearTimeout(timer);
       }
-      if (response.status < 200 || response.status >= 300) {
-        failures.push(`${url}: HTTP ${String(response.status)}`);
-        continue;
-      }
-      const rawBody = await response.text();
       let parsed: unknown;
       try {
         parsed = JSON.parse(rawBody);

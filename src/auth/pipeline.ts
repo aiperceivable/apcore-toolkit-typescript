@@ -50,6 +50,7 @@ export async function sendRequest(
   kind: RequestKind,
   url: string,
   baseParams: Readonly<Record<string, string>>,
+  remainingBudget?: () => number,
 ): Promise<AuthResponse> {
   const { config } = ctx;
   const built = buildRequestFields(config, kind, baseParams);
@@ -69,7 +70,8 @@ export async function sendRequest(
     params,
     headers,
     encoding: config.requestEncoding[kind],
-    timeoutMs: config.httpTimeoutMs,
+    // Resolve after request hooks, which may consume the remaining flow budget.
+    timeoutMs: Math.min(config.httpTimeoutMs, remainingBudget?.() ?? config.httpTimeoutMs),
   });
 }
 

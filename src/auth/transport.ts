@@ -35,7 +35,7 @@ export interface AuthRequest {
   headers: Record<string, string>;
   /** Body encoding chosen for this kind. */
   encoding: RequestEncoding;
-  /** Per-request timeout in milliseconds. */
+  /** Total request timeout in milliseconds, including reading the response body. */
   timeoutMs: number;
 }
 
@@ -56,7 +56,8 @@ export interface AuthResponse {
  *
  * A transport signals a connection-level failure by throwing
  * {@link AuthTransportError}; the state machine retries those rather than
- * terminating, bounded by the flow deadline.
+ * terminating, bounded by the flow deadline. Implementations must honour
+ * `request.timeoutMs` for the entire HTTP operation, including the response body.
  */
 export interface AuthTransport {
   send(request: AuthRequest): Promise<AuthResponse>;
@@ -228,37 +229,39 @@ export class FetchAuthTransport implements AuthTransport {
     const timer = setTimeout(() => {
       controller.abort();
     }, request.timeoutMs);
-    let response: Response;
     try {
-      response = await this.fetchImpl(request.url, {
-        method: 'POST',
-        headers: { ...request.headers, 'Content-Type': contentType },
-        body,
-        signal: controller.signal,
-      });
-    } catch (err) {
-      // Connection reset, DNS failure, timeout: retryable, not terminal.
-      throw new AuthTransportError(
-        `HTTP transport error for ${request.kind} request: ${err instanceof Error ? err.message : String(err)}`,
-        { cause: err },
-      );
+      let response: Response;
+      try {
+        response = await this.fetchImpl(request.url, {
+          method: 'POST',
+          headers: { ...request.headers, 'Content-Type': contentType },
+          body,
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Connection reset, DNS failure, timeout: retryable, not terminal.
+        throw new AuthTransportError(
+          `HTTP transport error for ${request.kind} request: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
+        );
+      }
+
+      let rawBody: string;
+      try {
+        rawBody = await response.text();
+      } catch (err) {
+        throw new AuthTransportError(
+          `Failed to read ${request.kind} response body: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
+        );
+      }
+      return {
+        status: response.status,
+        contentType: response.headers.get('content-type'),
+        rawBody,
+      };
     } finally {
       clearTimeout(timer);
     }
-
-    let rawBody: string;
-    try {
-      rawBody = await response.text();
-    } catch (err) {
-      throw new AuthTransportError(
-        `Failed to read ${request.kind} response body: ${err instanceof Error ? err.message : String(err)}`,
-        { cause: err },
-      );
-    }
-    return {
-      status: response.status,
-      contentType: response.headers.get('content-type'),
-      rawBody,
-    };
   }
 }

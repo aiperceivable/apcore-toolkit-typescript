@@ -132,6 +132,7 @@ export class DeviceCodeGrant implements Grant<DeviceLoginOptions> {
    */
   async authorize(ctx: GrantContext, options: DeviceLoginOptions = {}): Promise<TokenSet> {
     const authorization = await this.requestDeviceCode(ctx);
+    const started = ctx.clock();
     // Derived once, before the callback, and handed to both it and the loop.
     const deadlineSeconds = effectiveDeadlineSeconds(
       authorization.expiresIn,
@@ -143,7 +144,7 @@ export class DeviceCodeGrant implements Grant<DeviceLoginOptions> {
       verificationUriComplete: authorization.verificationUriComplete,
       expiresIn: deadlineSeconds,
     });
-    return this.poll(ctx, authorization, deadlineSeconds, options);
+    return this.poll(ctx, authorization, deadlineSeconds, options, started);
   }
 
   /**
@@ -197,6 +198,7 @@ export class DeviceCodeGrant implements Grant<DeviceLoginOptions> {
     authorization: DeviceAuthorization,
     deadlineSeconds: number,
     options: DeviceLoginOptions,
+    started: number,
   ): Promise<TokenSet> {
     const { config } = ctx;
     const tokenEndpoint = config.tokenEndpoint;
@@ -216,18 +218,22 @@ export class DeviceCodeGrant implements Grant<DeviceLoginOptions> {
       [WireField.DEVICE_CODE]: authorization.deviceCode,
     };
 
-    const started = ctx.clock();
     let attempt = 0;
-
-    for (;;) {
-      await ctx.sleep(interval * 1000);
-      const elapsedMs = ctx.clock() - started;
-      if (elapsedMs >= deadlineMs) {
+    const remainingBudget = (): number => {
+      const remaining = deadlineMs - (ctx.clock() - started);
+      if (remaining <= 0) {
         throw new AuthorizationExpiredError(
           `Device authorization deadline of ${String(deadlineSeconds)}s elapsed after ${String(attempt)} poll(s)`,
           true,
         );
       }
+      return remaining;
+    };
+
+    for (;;) {
+      await ctx.sleep(Math.min(interval * 1000, remainingBudget()));
+      remainingBudget();
+      const elapsedMs = ctx.clock() - started;
 
       attempt += 1;
       invokeCallback(ctx.warn, 'onPoll', options.onPoll, {
@@ -239,14 +245,17 @@ export class DeviceCodeGrant implements Grant<DeviceLoginOptions> {
       let dispatch;
       let rawBody = '';
       try {
-        const response = await sendRequest(ctx, 'token', tokenEndpoint, baseParams);
+        remainingBudget();
+        const response = await sendRequest(ctx, 'token', tokenEndpoint, baseParams, remainingBudget);
+        remainingBudget();
         rawBody = response.rawBody;
         dispatch = await dispatchTokenResponse(ctx, response, 'token');
+        remainingBudget();
       } catch (err) {
         if (err instanceof AuthTransportError) {
-          // A dropped connection mid-flow is common on flaky networks, and
-          // the deadline already bounds the total wait, so retrying cannot
-          // loop forever.
+          // Retry only while the flow budget remains. A request can consume
+          // the final milliseconds, so do not sleep again after it times out.
+          remainingBudget();
           continue;
         }
         throw err;

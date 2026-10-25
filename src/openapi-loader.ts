@@ -87,22 +87,23 @@ export async function loadSpec(
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
-    let response: Response;
     try {
-      response = await f(source, { headers: requestHeaders, signal: controller.signal });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`loadSpec: request to ${source} failed: ${msg}`);
+      let response: Response;
+      let text: string;
+      try {
+        response = await f(source, { headers: requestHeaders, signal: controller.signal });
+        text = await response.text();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`loadSpec: request to ${source} failed: ${msg}`);
+      }
+      if (!response.ok) {
+        throw new Error(`loadSpec: request to ${source} failed with status ${response.status} ${response.statusText}`);
+      }
+      return parseDocument(text, source);
     } finally {
       clearTimeout(timer);
     }
-
-    if (!response.ok) {
-      throw new Error(`loadSpec: request to ${source} failed with status ${response.status} ${response.statusText}`);
-    }
-
-    const text = await response.text();
-    return parseDocument(text, source);
   }
 
   let text: string;

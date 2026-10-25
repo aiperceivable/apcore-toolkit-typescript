@@ -248,6 +248,7 @@ interface PollRun {
   tokens: TokenSet | null;
   delays: number[];
   pollsMade: number;
+  finalInterval: number | null;
   transport: ScriptedTransport;
   userCodeEvents: { userCode: string; verificationUri: string; verificationUriComplete: string | null }[];
 }
@@ -279,10 +280,12 @@ async function runPollCase(tc: FixtureCase): Promise<PollRun> {
     wallClock: pinnedWallClock(),
   });
 
+  let finalInterval: number | null = null;
   let outcome: Outcome = 'success';
   let tokens: TokenSet | null = null;
   try {
     tokens = await client.login({
+      onPoll: (event) => { finalInterval = event.interval; },
       onUserCode: (event) => {
         userCodeEvents.push({
           userCode: event.userCode,
@@ -299,6 +302,7 @@ async function runPollCase(tc: FixtureCase): Promise<PollRun> {
     tokens,
     delays: clock.delays,
     pollsMade: transport.consumed,
+    finalInterval,
     transport,
     userCodeEvents,
   };
@@ -328,9 +332,9 @@ function assertPollExpectations(tc: FixtureCase, run: PollRun): void {
     expect(unique, `${label} — every poll delay`).toEqual([expected.poll_delays_all_equal]);
   }
   if (expected.final_interval !== undefined) {
-    // The final interval is the last sleep the machine performed; every
-    // `final_interval` in the corpus equals the last `poll_delays` entry.
-    expect(run.delays[run.delays.length - 1], `${label} — final_interval`).toBe(
+    // The scheduling interval is independent of a final sleep clamped to
+    // the remaining deadline (case 008 sleeps 2s but retains a 5s interval).
+    expect(run.finalInterval, `${label} — final_interval`).toBe(
       expected.final_interval,
     );
   }

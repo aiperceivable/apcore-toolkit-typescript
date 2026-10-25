@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.1] - 2026-10-25
+
+### Changed
+
+- Required `apcore-js` dependency floor raised to `0.32.3`; lockfile synchronized.
+
+### Fixed
+
+- HTTP proxy execution now aborts its HTTP request when the Context cancel token
+  is cancelled, rejects pre-cancelled calls before resolving credentials, and
+  releases cancellation listeners and timers after completion.
+- HTTP proxy, OpenAPI loading, and authentication timeouts now cover the complete
+  response body, including error responses, rather than ending at response headers.
+- Authentication discovery now applies the configured request timeout to headers
+  and the complete body, and tries the next candidate on body read failures.
+- Device authorization polling caps sleeps and requests by the remaining flow
+  deadline from device-code receipt, includes consumer callback time, recomputes
+  request budgets after hooks, and rejects late responses.
+  Custom auth transports must honour the total `AuthRequest.timeoutMs` budget.
+
+### Added
+
+- Real HTTP regression tests for continuously arriving response chunks and
+  connection cleanup across proxy, OpenAPI loading, authentication, and discovery.
+
 ## [0.14.0] - 2026-10-09
 
 Toolkit update for apcore 0.32.0. Public loader signatures and error types

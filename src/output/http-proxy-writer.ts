@@ -24,6 +24,7 @@
 
 import {
   ErrorCodes,
+  ExecutionCancelledError,
   FunctionModule,
   jsonSchemaToTypeBox,
   ModuleError,
@@ -258,8 +259,9 @@ export class HTTPProxyRegistryWriter {
 
     const execute = async (
       inputs: Record<string, unknown>,
-      _ctx: Context,
+      ctx: Context,
     ): Promise<Record<string, unknown>> => {
+      ctx.cancelToken?.check();
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (authFactory) {
         const authHeaders = await authFactory();
@@ -271,6 +273,9 @@ export class HTTPProxyRegistryWriter {
           );
         }
       }
+
+      // Credential resolution may suspend while cancellation is requested.
+      ctx.cancelToken?.check();
 
       // Split inputs into path-params and remaining; percent-encode every
       // path-param value (RFC 3986 unreserved set) BEFORE substitution so
@@ -321,8 +326,13 @@ export class HTTPProxyRegistryWriter {
       }
 
       const controller = new AbortController();
+      const cancelSignal = ctx.cancelToken?.signal;
+      const onCancel = () => controller.abort();
+      cancelSignal?.addEventListener('abort', onCancel, { once: true });
+      if (cancelSignal?.aborted) controller.abort();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       let resp: Response;
+      let text: string;
       try {
         resp = await fetchImpl(fullUrl, {
           method: methodUpper,
@@ -330,24 +340,29 @@ export class HTTPProxyRegistryWriter {
           body,
           signal: controller.signal,
         });
+        // fetch resolves at headers; keep the timeout and cancellation active
+        // until the complete response body has been consumed.
+        text = await resp.text();
+        if (cancelSignal?.aborted) throw new ExecutionCancelledError();
       } catch (exc) {
-        clearTimeout(timer);
+        if (cancelSignal?.aborted) throw new ExecutionCancelledError();
         const msg = exc instanceof Error ? exc.message : String(exc);
         throw new ModuleError(
           ErrorCodes.MODULE_EXECUTE_ERROR,
           `HTTP transport error: ${msg}`,
           {},
         );
+      } finally {
+        clearTimeout(timer);
+        cancelSignal?.removeEventListener('abort', onCancel);
       }
-      clearTimeout(timer);
 
-      const text = await resp.text();
       if (resp.status >= 200 && resp.status < 300) {
         if (resp.status === 204 || text === '') return {};
         let parsed: unknown;
         try {
           parsed = JSON.parse(text);
-        } catch (exc) {
+        } catch {
           throw new ModuleError(
             ErrorCodes.MODULE_EXECUTE_ERROR,
             `HTTP ${resp.status}: invalid JSON in response body`,
