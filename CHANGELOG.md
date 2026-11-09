@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.2] - 2026-11-09
+
+### Fixed
+
+- `VERSION` no longer resolves `../package.json` through
+  `createRequire(import.meta.url)` at module load. Bundlers rewrite `import.meta.url`
+  to the bundle entry, so the relative path resolved against the consumer's output:
+  under `bun build --compile` the package threw
+  `Cannot find module '../package.json' from '/$bunfs/root/<entry>'` at import time,
+  breaking every consumer (including those that never read `VERSION`); in bundles
+  that emit real paths (e.g. `<app>/dist/cli.js`) it silently reported the hosting
+  application's version. It is now a static JSON import, inlined at build time —
+  matching `apcore-mcp` and the compile-time constant used by the Rust SDK.
+
+### Changed
+
+- `engines.node` raised from `>=20.0.0` to `>=20.10.0`: the entry point now uses
+  import attributes (`with { type: 'json' }`), which require Node 20.10+ / 22+.
+
+### Added
+
+- `tests/version.test.ts` pins `VERSION` to the `package.json` version field, and
+  `tests/version-source.test.ts` fails if the runtime package.json resolve is
+  reintroduced.
+- `tests/packaging.test.ts` compiles a consumer with `bun build --compile` and
+  asserts the printed version, covering the `$bunfs` failure mode end to end.
+  Opt-in locally (`pnpm test:packaging`); enforced in CI.
+
 ## [0.14.1] - 2026-10-25
 
 ### Changed

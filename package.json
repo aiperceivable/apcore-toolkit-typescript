@@ -1,6 +1,6 @@
 {
   "name": "apcore-toolkit",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "description": "Shared scanner, schema extraction, and output toolkit for apcore framework adapters",
   "type": "module",
   "main": "./dist/index.js",
@@ -49,6 +49,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:packaging": "APCORE_PACKAGING_TEST=1 vitest run tests/packaging.test.ts",
     "lint": "eslint src/ tests/",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
@@ -72,7 +73,7 @@
     "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.10.0"
   },
   "apdev": {
     "base_package": "apcore-toolkit"

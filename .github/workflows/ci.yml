@@ -37,6 +37,13 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned to the 1.3 line the packaging smoke test was validated against;
+          # `latest` would let a bun release turn CI red without a code change.
+          bun-version: 1.3.x
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -61,3 +68,9 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      # Guards the regression that shipped in 0.14.1: `VERSION` resolved
+      # ../package.json through createRequire(import.meta.url), which cannot work
+      # inside a `bun --compile` single-file binary ($bunfs).
+      - name: Packaging smoke test (compiled consumer)
+        run: APCORE_PACKAGING_TEST=1 pnpm test tests/packaging.test.ts

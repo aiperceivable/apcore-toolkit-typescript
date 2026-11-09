@@ -209,10 +209,24 @@ export {
   runVerifierChain,
 } from './output/verifiers.js';
 
-import { createRequire } from 'node:module';
-const _require = createRequire(import.meta.url);
-const _pkg = _require('../package.json') as { version: string };
-export const VERSION: string = _pkg.version;
+// Static JSON import: resolved at build time and inlined by every bundler, so it
+// survives `bun --compile` and webpack/esbuild/rollup output.
+//
+// Do NOT go back to `createRequire(import.meta.url)('../package.json')`: bundlers
+// rewrite `import.meta.url` to the *bundle* entry, so the relative path resolves
+// against the consumer's output — under `bun --compile` it throws
+// `Cannot find module '../package.json' from '/$bunfs/root/<entry>'` at import
+// time (breaking consumers that never even read `VERSION`), and in a bundle that
+// emits real paths (e.g. `<app>/dist/cli.js`) it silently picks up the *hosting
+// application's* package.json.
+//
+// Do NOT switch to a named import (`import { version } from ...`): Node's JSON
+// modules only expose a default export, so that throws
+// `does not provide an export named 'version'`.
+//
+// Keep the version in sync with package.json; `tests/version.test.ts` enforces it.
+import pkg from '../package.json' with { type: 'json' };
+export const VERSION: string = pkg.version;
 
 // Package-level free-function exports for cross-language parity.
 // Python and Rust expose these as top-level symbols; TypeScript re-exports
